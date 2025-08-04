@@ -96,7 +96,7 @@ Review Dimensions:
 
 3. Maintainability:
    - Is the code clean, modular, and well-structured?
-   - Are naming conventions, abstraction levels, and logic separation appropriate?
+   - Are abstraction levels, and logic separation appropriate?
    - Will another engineer be able to understand and modify it without confusion?
 
 4. Best Practices:
