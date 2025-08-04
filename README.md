@@ -31,7 +31,7 @@ jobs:
           fetch-depth: 0
       
       - name: LLM Code Review
-        uses: tajawal/llm-code-review@v1
+        uses: tajawal/web-code-review@v1
         with:
           claude_api_key: ${{ secrets.CLAUDE_API_KEY }}
           path_to_files: 'src/'
