@@ -1,0 +1,31 @@
+{
+  "name": "web-code-reviewer",
+  "version": "1.0.0",
+  "description": "Automated code review using LLM (Claude/OpenAI) for GitHub PRs",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "ncc build src/index.js -o dist",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "github-action",
+    "code-review",
+    "llm",
+    "claude",
+    "openai",
+    "automation"
+  ],
+  "author": "Tajawal",
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.10.0",
+    "@actions/github": "^6.0.0",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+} 

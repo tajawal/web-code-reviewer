@@ -1,0 +1,39 @@
+name: 'Web Code Reviewer'
+description: 'Automated code review using LLM (Claude/OpenAI) for GitHub PRs'
+author: 'Tajawal'
+
+inputs:
+  llm_provider:
+    description: 'LLM provider to use (claude or openai)'
+    required: false
+    default: 'claude'
+  path_to_files:
+    description: 'Path to files to review (e.g., packages/, src/)'
+    required: false
+    default: 'packages/'
+  base_branch:
+    description: 'Base branch to compare against (auto-detected from PR if not specified)'
+    required: false
+    default: 'main'
+  max_tokens:
+    description: 'Maximum tokens for LLM response'
+    required: false
+    default: '2000'
+  temperature:
+    description: 'Temperature for LLM response (0.0-1.0)'
+    required: false
+    default: '0.3'
+  openai_api_key:
+    description: 'OpenAI API key (required if provider is openai)'
+    required: false
+  claude_api_key:
+    description: 'Claude API key (required if provider is claude)'
+    required: false
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
+
+branding:
+  icon: 'robot'
+  color: 'blue' 
