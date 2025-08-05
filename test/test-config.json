@@ -5,7 +5,7 @@
       "env": {
         "TEST_PATH_TO_FILES": "src/",
         "TEST_LLM_PROVIDER": "claude",
-        "TEST_BASE_BRANCH": "develop"
+        "TEST_BASE_BRANCH": "master"
       }
     },
     "multi-path": {
@@ -13,7 +13,7 @@
       "env": {
         "TEST_PATH_TO_FILES": "src/,packages/,components/",
         "TEST_LLM_PROVIDER": "claude",
-        "TEST_BASE_BRANCH": "develop"
+        "TEST_BASE_BRANCH": "master"
       }
     },
     "openai-provider": {
@@ -21,7 +21,7 @@
       "env": {
         "TEST_PATH_TO_FILES": "src/",
         "TEST_LLM_PROVIDER": "openai",
-        "TEST_BASE_BRANCH": "develop"
+        "TEST_BASE_BRANCH": "master"
       }
     },
     "custom-params": {
@@ -29,7 +29,7 @@
       "env": {
         "TEST_PATH_TO_FILES": "src/,lib/",
         "TEST_LLM_PROVIDER": "claude",
-        "TEST_BASE_BRANCH": "develop",
+        "TEST_BASE_BRANCH": "master",
         "TEST_MAX_TOKENS": "3000",
         "TEST_TEMPERATURE": "0.5"
       }
@@ -39,7 +39,7 @@
       "env": {
         "TEST_PATH_TO_FILES": "src/",
         "TEST_LLM_PROVIDER": "claude",
-        "TEST_BASE_BRANCH": "develop",
+        "TEST_BASE_BRANCH": "master",
         "CLAUDE_API_KEY": "",
         "OPENAI_API_KEY": ""
       }
