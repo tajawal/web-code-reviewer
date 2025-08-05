@@ -5,7 +5,13 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "ncc build src/index.js -o dist",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "test": "node test/run-tests.js",
+    "test:single": "node test/run-tests.js single-path",
+    "test:multi": "node test/run-tests.js multi-path",
+    "test:openai": "node test/run-tests.js openai",
+    "test:custom": "node test/run-tests.js custom",
+    "test:setup": "node test/setup-env.js"
   },
   "keywords": [
     "github-action",
@@ -23,9 +29,10 @@
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
-    "@vercel/ncc": "^0.38.0"
+    "@vercel/ncc": "^0.38.0",
+    "dotenv": "^17.2.1"
   },
   "engines": {
     "node": ">=18.0.0"
   }
-} 
+}

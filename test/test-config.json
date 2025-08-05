@@ -1,0 +1,66 @@
+{
+  "scenarios": {
+    "single-path": {
+      "description": "Test with single path configuration",
+      "env": {
+        "TEST_PATH_TO_FILES": "src/",
+        "TEST_LLM_PROVIDER": "claude",
+        "TEST_BASE_BRANCH": "develop"
+      }
+    },
+    "multi-path": {
+      "description": "Test with multiple paths configuration",
+      "env": {
+        "TEST_PATH_TO_FILES": "src/,packages/,components/",
+        "TEST_LLM_PROVIDER": "claude",
+        "TEST_BASE_BRANCH": "develop"
+      }
+    },
+    "openai-provider": {
+      "description": "Test with OpenAI provider",
+      "env": {
+        "TEST_PATH_TO_FILES": "src/",
+        "TEST_LLM_PROVIDER": "openai",
+        "TEST_BASE_BRANCH": "develop"
+      }
+    },
+    "custom-params": {
+      "description": "Test with custom parameters",
+      "env": {
+        "TEST_PATH_TO_FILES": "src/,lib/",
+        "TEST_LLM_PROVIDER": "claude",
+        "TEST_BASE_BRANCH": "develop",
+        "TEST_MAX_TOKENS": "3000",
+        "TEST_TEMPERATURE": "0.5"
+      }
+    },
+    "no-api-key": {
+      "description": "Test without API key (should show warning)",
+      "env": {
+        "TEST_PATH_TO_FILES": "src/",
+        "TEST_LLM_PROVIDER": "claude",
+        "TEST_BASE_BRANCH": "develop",
+        "CLAUDE_API_KEY": "",
+        "OPENAI_API_KEY": ""
+      }
+    }
+  },
+  "mockResponses": {
+    "claude": {
+      "content": [
+        {
+          "text": "This is a mock Claude response for testing.\n\n## Review Summary\n\n🔴 **Critical Issues:**\n- Security vulnerability in authentication\n- Memory leak in component\n\n🟡 **Suggestions:**\n- Add error boundaries\n- Improve documentation\n\n## Final Recommendation\n❌ Do NOT merge - Critical issues found."
+        }
+      ]
+    },
+    "openai": {
+      "choices": [
+        {
+          "message": {
+            "content": "This is a mock OpenAI response for testing.\n\n## Review Summary\n\n🔴 **Critical Issues:**\n- Security vulnerability in authentication\n- Memory leak in component\n\n🟡 **Suggestions:**\n- Add error boundaries\n- Improve documentation\n\n## Final Recommendation\n❌ Do NOT merge - Critical issues found."
+          }
+        }
+      ]
+    }
+  }
+} 

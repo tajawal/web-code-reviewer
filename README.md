@@ -61,7 +61,7 @@ jobs:
           claude_api_key: ${{ secrets.CLAUDE_API_KEY }}
           # openai_api_key: ${{ secrets.OPENAI_API_KEY }}  # if using OpenAI
           path_to_files: 'packages/'
-          base_branch: 'main'
+          base_branch: 'develop'
           max_tokens: '2000'
           temperature: '0.3'
 ```
@@ -71,8 +71,8 @@ jobs:
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `llm_provider` | LLM provider to use (`claude` or `openai`) | No | `claude` |
-| `path_to_files` | Path to files to review (e.g., `packages/`, `src/`) | No | `packages/` |
-| `base_branch` | Base branch to compare against (auto-detected from PR if not specified) | No | `main` |
+| `path_to_files` | Comma-separated paths to files to review (e.g., `packages/`, `src/`, `components/`) | No | `packages/` |
+| `base_branch` | Base branch to compare against (auto-detected from PR if not specified) | No | `develop` |
 | `max_tokens` | Maximum tokens for LLM response | No | `2000` |
 | `temperature` | Temperature for LLM response (0.0-1.0) | No | `0.3` |
 | `openai_api_key` | OpenAI API key (required if provider is `openai`) | No | - |
@@ -86,7 +86,7 @@ The action automatically detects the base branch from the pull request context:
 
 - **In PR context**: Uses the PR's base branch automatically
 - **Manual override**: You can specify `base_branch` input to override the auto-detection
-- **Fallback**: Uses `main` as default if neither PR context nor input is available
+- **Fallback**: Uses `develop` as default if neither PR context nor input is available
 
 ### API Keys
 
@@ -189,8 +189,21 @@ The action provides:
 
 The action automatically filters files to review:
 
-- **Included**: Files in the specified path (default: `packages/`)
+- **Included**: Files in any of the specified paths (default: `packages/`)
+- **Multiple Paths**: You can specify multiple comma-separated paths (e.g., `packages/,src/,components/`)
 - **Excluded**: `.json`, `.md`, `.lock`, `.test.js`, `.spec.js` files
+
+### Path Examples:
+```yaml
+# Single path
+path_to_files: 'src/'
+
+# Multiple paths
+path_to_files: 'packages/,src/,components/'
+
+# Mixed paths
+path_to_files: 'src/components/,packages/utils/,lib/'
+```
 
 ## 🛠️ Development
 
@@ -200,7 +213,30 @@ The action automatically filters files to review:
 2. Install dependencies: `npm install`
 3. Build the action: `npm run build`
 
-### Testing
+### Local Testing
+
+The action includes a comprehensive local testing setup:
+
+```bash
+# Setup environment variables (first time only)
+npm run test:setup
+
+# Run all tests
+npm test
+
+# Run specific test scenarios
+npm run test:single    # Single path test
+npm run test:multi     # Multiple paths test
+npm run test:openai    # OpenAI provider test
+npm run test:custom    # Custom configuration test
+
+# Test with custom parameters
+TEST_PATH_TO_FILES="src/,lib/" npm run test:custom
+```
+
+See [test/README.md](test/README.md) for detailed testing documentation.
+
+### Manual Testing
 
 ```bash
 # Install dependencies

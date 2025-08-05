@@ -8,7 +8,7 @@ const { execSync } = require('child_process');
  * Configuration constants
  */
 const CONFIG = {
-  DEFAULT_BASE_BRANCH: 'main',
+  DEFAULT_BASE_BRANCH: 'develop',
   DEFAULT_PROVIDER: 'claude',
   DEFAULT_PATH_TO_FILES: 'packages/',
   IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js'],
@@ -123,7 +123,7 @@ class GitHubActionsReviewer {
   constructor() {
     // Get inputs from action
     this.provider = core.getInput('llm_provider') || CONFIG.DEFAULT_PROVIDER;
-    this.pathToFiles = core.getInput('path_to_files') || CONFIG.DEFAULT_PATH_TO_FILES;
+    this.pathToFiles = this.parsePathToFiles(core.getInput('path_to_files') || CONFIG.DEFAULT_PATH_TO_FILES);
     this.maxTokens = parseInt(core.getInput('max_tokens')) || CONFIG.MAX_TOKENS;
     this.temperature = parseFloat(core.getInput('temperature')) || CONFIG.TEMPERATURE;
     
@@ -146,6 +146,25 @@ class GitHubActionsReviewer {
         process.env.CLAUDE_API_KEY = claudeKey;
       }
     }
+  }
+
+  /**
+   * Parse path_to_files input to support multiple comma-separated paths
+   */
+  parsePathToFiles(input) {
+    if (!input) {
+      return [CONFIG.DEFAULT_PATH_TO_FILES];
+    }
+    
+    // Split by comma and clean up whitespace
+    const paths = input.split(',').map(path => path.trim()).filter(path => path.length > 0);
+    
+    if (paths.length === 0) {
+      return [CONFIG.DEFAULT_PATH_TO_FILES];
+    }
+    
+    core.info(`📁 Parsed paths to review: ${paths.join(', ')}`);
+    return paths;
   }
 
   /**
@@ -182,13 +201,18 @@ class GitHubActionsReviewer {
       const allFiles = rawOutput
         .split('\n')
         .filter(Boolean) // Remove empty lines
-        .filter(file =>
-          file.startsWith(this.pathToFiles) &&                     // Specific directory
-          !file.endsWith('.json') &&
-          !file.endsWith('.md') &&
-          !file.endsWith('.test.js') &&
-          !file.endsWith('.spec.js')
-        );
+        .filter(file => {
+          // Check if file matches any of the specified paths
+          const matchesPath = this.pathToFiles.some(path => file.startsWith(path));
+          
+          // Check if file should be ignored
+          const shouldIgnore = file.endsWith('.json') ||
+                              file.endsWith('.md') ||
+                              file.endsWith('.test.js') ||
+                              file.endsWith('.spec.js');
+          
+          return matchesPath && !shouldIgnore;
+        });
       
       core.info(`Found ${allFiles.length} total changed files`);
       
@@ -359,7 +383,7 @@ class GitHubActionsReviewer {
 - **Review Date**: ${new Date().toLocaleString()}
 - **Base Branch**: ${this.baseBranch}
 - **Head Branch**: ${this.context.payload.pull_request?.head?.ref || 'HEAD'}
-- **Path Filter**: ${this.pathToFiles}
+- **Path Filter**: ${this.pathToFiles.join(', ')}
 
 **Files Reviewed:**
 ${changedFiles.map(file => `- \`${file}\``).join('\n')}
@@ -394,7 +418,7 @@ ${shouldBlockMerge
     core.info(`  - Head Ref: ${this.context.sha}`);
     core.info(`  - Review Date: ${new Date().toLocaleString()}`);
     core.info(`  - Reviewer: ${this.provider.toUpperCase()} LLM`);
-    core.info(`  - Path to Files: ${this.pathToFiles}`);
+    core.info(`  - Path to Files: ${this.pathToFiles.join(', ')}`);
     core.info(`  - PR Number: ${this.context.issue?.number || 'Not available'}\n`);
   }
 

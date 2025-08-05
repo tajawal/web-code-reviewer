@@ -8,13 +8,13 @@ inputs:
     required: false
     default: 'claude'
   path_to_files:
-    description: 'Path to files to review (e.g., packages/, src/)'
+    description: 'Comma-separated paths to files to review (e.g., packages/, src/, components/)'
     required: false
     default: 'packages/'
   base_branch:
     description: 'Base branch to compare against (auto-detected from PR if not specified)'
     required: false
-    default: 'main'
+    default: 'develop'
   max_tokens:
     description: 'Maximum tokens for LLM response'
     required: false

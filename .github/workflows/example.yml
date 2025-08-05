@@ -19,7 +19,7 @@ jobs:
           llm_provider: 'claude'  # or 'openai'
           claude_api_key: ${{ secrets.CLAUDE_API_KEY }}
           # openai_api_key: ${{ secrets.OPENAI_API_KEY }}  # if using OpenAI
-          path_to_files: 'src/'
-          # base_branch: 'main'  # Optional - auto-detected from PR
+          path_to_files: 'src/,packages/'  # Multiple paths supported
+          # base_branch: 'develop'  # Optional - auto-detected from PR
           max_tokens: '2000'
           temperature: '0.3' 
