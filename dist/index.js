@@ -32010,7 +32010,7 @@ const { execSync } = __nccwpck_require__(5317);
 const CONFIG = {
   DEFAULT_BASE_BRANCH: 'develop',
   DEFAULT_PROVIDER: 'claude',
-  DEFAULT_PATH_TO_FILES: 'src/',
+  DEFAULT_PATH_TO_FILES: 'packages/',
   IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js'],
   MAX_TOKENS: 2000,
   TEMPERATURE: 0.3,
@@ -32058,14 +32058,14 @@ const LLM_PROVIDERS = {
   },
   claude: {
     url: 'https://api.anthropic.com/v1/messages',
-    model: 'claude-opus-4-20250514',
+    model: 'claude-sonnet-4-20250514',
     headers: (apiKey) => ({
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01'
     }),
     body: (prompt, diff) => ({
-      model: 'claude-opus-4-20250514',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: CONFIG.MAX_TOKENS,
       temperature: CONFIG.TEMPERATURE,
       messages: [{
