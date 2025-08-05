@@ -161,7 +161,7 @@ npm run test:custom
 | `OPENAI_API_KEY` | OpenAI API key for testing | - |
 | `TEST_LLM_PROVIDER` | LLM provider to test | `claude` |
 | `TEST_PATH_TO_FILES` | Paths to test | `src/` |
-| `TEST_BASE_BRANCH` | Base branch for testing | `develop` |
+| `TEST_BASE_BRANCH` | Base branch for testing | `master` |
 | `TEST_MAX_TOKENS` | Max tokens for LLM | `2000` |
 | `TEST_TEMPERATURE` | Temperature for LLM | `0.3` |
 | `GITHUB_TOKEN` | GitHub token (optional) | - |
