@@ -32010,7 +32010,7 @@ const { execSync } = __nccwpck_require__(5317);
 const CONFIG = {
   DEFAULT_BASE_BRANCH: 'develop',
   DEFAULT_PROVIDER: 'claude',
-  DEFAULT_PATH_TO_FILES: 'packages/',
+  DEFAULT_PATH_TO_FILES: 'src/',
   IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js'],
   MAX_TOKENS: 2000,
   TEMPERATURE: 0.3,
@@ -32382,7 +32382,7 @@ class GitHubActionsReviewer {
 - **Files Reviewed**: ${changedFiles.length} files
 - **Review Date**: ${new Date().toLocaleString()}
 - **Base Branch**: ${this.baseBranch}
-- **Head Branch**: ${this.context.payload.pull_request?.head?.ref || 'HEAD'}
+- **Head Branch**: ${(this.context.payload.pull_request && this.context.payload.pull_request.head && this.context.payload.pull_request.head.ref) || 'HEAD'}
 - **Path Filter**: ${this.pathToFiles.join(', ')}
 
 **Files Reviewed:**
@@ -32419,7 +32419,7 @@ ${shouldBlockMerge
     core.info(`  - Review Date: ${new Date().toLocaleString()}`);
     core.info(`  - Reviewer: ${this.provider.toUpperCase()} LLM`);
     core.info(`  - Path to Files: ${this.pathToFiles.join(', ')}`);
-    core.info(`  - PR Number: ${this.context.issue?.number || 'Not available'}\n`);
+    core.info(`  - PR Number: ${(this.context.issue && this.context.issue.number) || 'Not available'}\n`);
   }
 
   /**
