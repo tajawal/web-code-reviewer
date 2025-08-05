@@ -11,7 +11,8 @@
     "test:multi": "node test/run-tests.js multi-path",
     "test:openai": "node test/run-tests.js openai",
     "test:custom": "node test/run-tests.js custom",
-    "test:setup": "node test/setup-env.js"
+    "test:setup": "node test/setup-env.js",
+    "test:debug": "node test/debug-env.js"
   },
   "keywords": [
     "github-action",

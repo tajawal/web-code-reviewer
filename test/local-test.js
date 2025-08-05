@@ -36,7 +36,7 @@ const mockContext = {
   payload: {
     pull_request: {
       base: {
-        ref: 'main'
+        ref: 'master'
       },
       head: {
         ref: 'feature/test'
@@ -51,13 +51,27 @@ const mockCore = {
     const inputs = {
       'llm_provider': process.env.TEST_LLM_PROVIDER || 'claude',
       'path_to_files': process.env.TEST_PATH_TO_FILES || 'src/',
-      'base_branch': process.env.TEST_BASE_BRANCH || 'develop',
+      'base_branch': process.env.TEST_BASE_BRANCH || 'master',
       'max_tokens': process.env.TEST_MAX_TOKENS || '2000',
       'temperature': process.env.TEST_TEMPERATURE || '0.3',
       'claude_api_key': process.env.CLAUDE_API_KEY || '',
       'openai_api_key': process.env.OPENAI_API_KEY || ''
     };
-    return inputs[name] || '';
+    
+    // Debug: Log the input request and available values
+    console.log(`🔍 core.getInput("${name}") called`);
+    console.log(`   Available inputs:`, Object.keys(inputs));
+    console.log(`   Environment variables:`, {
+      TEST_LLM_PROVIDER: process.env.TEST_LLM_PROVIDER,
+      TEST_PATH_TO_FILES: process.env.TEST_PATH_TO_FILES,
+      TEST_BASE_BRANCH: process.env.TEST_BASE_BRANCH,
+      CLAUDE_API_KEY: process.env.CLAUDE_API_KEY ? '***SET***' : 'NOT SET',
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY ? '***SET***' : 'NOT SET'
+    });
+    
+    const value = inputs[name] || '';
+    console.log(`   Returning: "${value}"`);
+    return value;
   },
   info: (message) => console.log(`ℹ️  ${message}`),
   warning: (message) => console.log(`⚠️  ${message}`),

@@ -32008,7 +32008,7 @@ const { execSync } = __nccwpck_require__(5317);
  * Configuration constants
  */
 const CONFIG = {
-  DEFAULT_BASE_BRANCH: 'main',
+  DEFAULT_BASE_BRANCH: 'develop',
   DEFAULT_PROVIDER: 'claude',
   DEFAULT_PATH_TO_FILES: 'packages/',
   IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js'],

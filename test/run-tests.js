@@ -43,7 +43,7 @@ const scenarios = {
     env: {
       TEST_PATH_TO_FILES: process.env.TEST_PATH_TO_FILES || 'src/',
       TEST_LLM_PROVIDER: process.env.TEST_LLM_PROVIDER || 'claude',
-      TEST_BASE_BRANCH: process.env.TEST_BASE_BRANCH || 'develop',
+      TEST_BASE_BRANCH: process.env.TEST_BASE_BRANCH || 'master',
       TEST_MAX_TOKENS: process.env.TEST_MAX_TOKENS || '2000',
       TEST_TEMPERATURE: process.env.TEST_TEMPERATURE || '0.3'
     }
@@ -69,13 +69,23 @@ function runTest(scenarioName) {
   // Set environment variables
   Object.entries(scenario.env).forEach(([key, value]) => {
     process.env[key] = value;
+    console.log(`🔧 Set ${key} = "${value}"`);
   });
+  
+  // Debug: Show all relevant environment variables
+  console.log('\n🔍 Environment variables after setting:');
+  console.log('   TEST_LLM_PROVIDER:', process.env.TEST_LLM_PROVIDER);
+  console.log('   TEST_PATH_TO_FILES:', process.env.TEST_PATH_TO_FILES);
+  console.log('   TEST_BASE_BRANCH:', process.env.TEST_BASE_BRANCH);
+  console.log('   CLAUDE_API_KEY:', process.env.CLAUDE_API_KEY ? '***SET***' : 'NOT SET');
+  console.log('   OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '***SET***' : 'NOT SET');
+  console.log('');
   
   // Run the test
   const testScript = path.join(__dirname, 'local-test.js');
   const child = spawn('node', [testScript], {
     stdio: 'inherit',
-    env: process.env
+    env: { ...process.env } // Ensure we pass all environment variables
   });
   
   child.on('close', (code) => {
