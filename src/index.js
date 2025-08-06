@@ -131,16 +131,15 @@ class GitHubActionsReviewer {
     this.maxTokens = parseInt(core.getInput('max_tokens')) || CONFIG.MAX_TOKENS;
     this.temperature = parseFloat(core.getInput('temperature')) || CONFIG.TEMPERATURE;
     
-    // Chunking configuration
-    this.chunkSize = parseInt(core.getInput('chunk_size')) || CONFIG.DEFAULT_CHUNK_SIZE;
-    this.maxConcurrentRequests = parseInt(core.getInput('max_concurrent_requests')) || CONFIG.MAX_CONCURRENT_REQUESTS;
-    this.batchDelayMs = parseInt(core.getInput('batch_delay_ms')) || CONFIG.BATCH_DELAY_MS;
+    // Chunking configuration - Always use CONFIG defaults
+    this.chunkSize = CONFIG.DEFAULT_CHUNK_SIZE;
+    this.maxConcurrentRequests = CONFIG.MAX_CONCURRENT_REQUESTS;
+    this.batchDelayMs = CONFIG.BATCH_DELAY_MS;
     
-    // Ensure chunk size is reasonable
-    if (this.chunkSize <= 0 || isNaN(this.chunkSize)) {
-      core.warning(`⚠️  Invalid chunk size: ${this.chunkSize}, using default: ${CONFIG.DEFAULT_CHUNK_SIZE}`);
-      this.chunkSize = CONFIG.DEFAULT_CHUNK_SIZE;
-    }
+    core.info(`🔧 Using CONFIG defaults:`);
+    core.info(`   chunkSize: ${this.chunkSize} (${Math.round(this.chunkSize / 1024)}KB)`);
+    core.info(`   maxConcurrentRequests: ${this.maxConcurrentRequests}`);
+    core.info(`   batchDelayMs: ${this.batchDelayMs}`);
     
     // GitHub context
     this.octokit = github.getOctokit(process.env.GITHUB_TOKEN);
@@ -257,6 +256,7 @@ class GitHubActionsReviewer {
    */
   splitDiffIntoChunks(diff, maxChunkSize = null) {
     const chunkSize = maxChunkSize || this.chunkSize;
+    
     if (!diff || diff.length === 0) {
       return [];
     }
