@@ -55,7 +55,10 @@ const mockCore = {
       'max_tokens': process.env.TEST_MAX_TOKENS || '2000',
       'temperature': process.env.TEST_TEMPERATURE || '0.3',
       'claude_api_key': process.env.CLAUDE_API_KEY || '',
-      'openai_api_key': process.env.OPENAI_API_KEY || ''
+      'openai_api_key': process.env.OPENAI_API_KEY || '',
+      'chunk_size': process.env.TEST_CHUNK_SIZE || '102400',
+      'max_concurrent_requests': process.env.TEST_MAX_CONCURRENT_REQUESTS || '3',
+      'batch_delay_ms': process.env.TEST_BATCH_DELAY_MS || '1000'
     };
     
     // Debug: Log the input request and available values
@@ -101,49 +104,63 @@ const mockGithub = {
   context: mockContext
 };
 
-// Mock node-fetch
+// Mock node-fetch with chunking support
+let apiCallCount = 0;
 const mockFetch = async (url, options) => {
-  console.log(`🌐 Mock API Call to: ${url}`);
+  apiCallCount++;
+  console.log(`🌐 Mock API Call #${apiCallCount} to: ${url}`);
   console.log('Headers:', options.headers);
-  console.log('Body:', options.body);
   
-  // Simulate API response
+  // Parse the request body to check if it's a chunk
+  const body = JSON.parse(options.body);
+  const isChunk = body.messages && body.messages[0] && body.messages[0].content && body.messages[0].content.includes('chunk');
+  
+  console.log(`📦 This is ${isChunk ? 'a chunked request' : 'a single request'}`);
+  if (isChunk) {
+    console.log(`   Chunk info: ${body.messages[0].content.match(/chunk (\d+) of (\d+)/)?.[0] || 'unknown chunk'}`);
+  }
+  
+  // Simulate API response with different content for chunks
+  const responseContent = isChunk 
+    ? `This is a mock LLM response for chunk ${apiCallCount} of the diff.
+
+## Chunk Review Summary
+
+🔴 **Critical Issues Found in this chunk:**
+- Mock security vulnerability in chunk ${apiCallCount}
+- Potential memory leak in component lifecycle
+
+🟡 **Suggestions for this chunk:**
+- Consider adding error boundaries
+- Improve code documentation
+
+## Chunk Recommendation
+${apiCallCount % 2 === 0 ? '❌ Do NOT merge' : '✅ Safe to merge'} - Issues found in this chunk.`
+    : `This is a mock LLM response for testing purposes.
+
+## Review Summary
+
+🔴 **Critical Issues Found:**
+- Mock security vulnerability in authentication logic
+- Potential memory leak in component lifecycle
+
+🟡 **Suggestions:**
+- Consider adding error boundaries
+- Improve code documentation
+
+## Final Recommendation
+❌ Do NOT merge - Critical security issues found that must be addressed.`;
+  
   return {
     ok: true,
     json: async () => ({
       choices: [{
         message: {
-          content: `This is a mock LLM response for testing purposes.
-
-## Review Summary
-
-🔴 **Critical Issues Found:**
-- Mock security vulnerability in authentication logic
-- Potential memory leak in component lifecycle
-
-🟡 **Suggestions:**
-- Consider adding error boundaries
-- Improve code documentation
-
-## Final Recommendation
-❌ Do NOT merge - Critical security issues found that must be addressed.`
+          content: responseContent
         }
       }],
       content: [{
-        text: `This is a mock LLM response for testing purposes.
-
-## Review Summary
-
-🔴 **Critical Issues Found:**
-- Mock security vulnerability in authentication logic
-- Potential memory leak in component lifecycle
-
-🟡 **Suggestions:**
-- Consider adding error boundaries
-- Improve code documentation
-
-## Final Recommendation
-❌ Do NOT merge - Critical security issues found that must be addressed.`
+        text: responseContent
       }]
     })
   };
@@ -188,6 +205,36 @@ const testConfig = {
         TEST_PATH_TO_FILES: 'src/',
         TEST_LLM_PROVIDER: 'openai'
       }
+    },
+    {
+      name: 'Chunking Test - Small Chunks',
+      env: {
+        TEST_PATH_TO_FILES: 'src/',
+        TEST_LLM_PROVIDER: 'claude',
+        TEST_CHUNK_SIZE: '1024', // 1KB chunks to force chunking
+        TEST_MAX_CONCURRENT_REQUESTS: '2',
+        TEST_BATCH_DELAY_MS: '500'
+      }
+    },
+    {
+      name: 'Chunking Test - High Concurrency',
+      env: {
+        TEST_PATH_TO_FILES: 'src/',
+        TEST_LLM_PROVIDER: 'claude',
+        TEST_CHUNK_SIZE: '2048', // 2KB chunks
+        TEST_MAX_CONCURRENT_REQUESTS: '5',
+        TEST_BATCH_DELAY_MS: '200'
+      }
+    },
+    {
+      name: 'Chunking Test - OpenAI',
+      env: {
+        TEST_PATH_TO_FILES: 'src/',
+        TEST_LLM_PROVIDER: 'openai',
+        TEST_CHUNK_SIZE: '5120', // 5KB chunks
+        TEST_MAX_CONCURRENT_REQUESTS: '3',
+        TEST_BATCH_DELAY_MS: '1000'
+      }
     }
   ]
 };
@@ -200,6 +247,9 @@ async function runTests() {
     console.log(`\n📋 Running: ${scenario.name}`);
     console.log('=' .repeat(50));
     
+    // Reset API call counter for each test
+    apiCallCount = 0;
+    
     // Set environment variables for this test
     Object.entries(scenario.env).forEach(([key, value]) => {
       process.env[key] = value;
@@ -211,6 +261,15 @@ async function runTests() {
       require(actionPath);
       
       console.log(`✅ ${scenario.name} completed successfully`);
+      console.log(`📊 Total API calls made: ${apiCallCount}`);
+      
+      // Check if chunking was used
+      if (apiCallCount > 1) {
+        console.log(`🔄 Chunking was used - ${apiCallCount} chunks processed`);
+      } else if (apiCallCount === 1) {
+        console.log(`📄 Single API call - no chunking needed`);
+      }
+      
     } catch (error) {
       console.log(`❌ ${scenario.name} failed:`, error.message);
     }

@@ -14,6 +14,10 @@ const CONFIG = {
   IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js'],
   MAX_TOKENS: 2000,
   TEMPERATURE: 0.3,
+  // Chunking configuration
+  DEFAULT_CHUNK_SIZE: 100 * 1024, // 100KB default chunk size
+  MAX_CONCURRENT_REQUESTS: 3, // Maximum concurrent API calls
+  BATCH_DELAY_MS: 1000, // Delay between batches in milliseconds
   APPROVAL_PHRASES: [
     'safe to merge', '✅ safe to merge', 'merge approved', 
     'no critical issues', 'safe to commit', 'approved for merge',
@@ -127,6 +131,11 @@ class GitHubActionsReviewer {
     this.maxTokens = parseInt(core.getInput('max_tokens')) || CONFIG.MAX_TOKENS;
     this.temperature = parseFloat(core.getInput('temperature')) || CONFIG.TEMPERATURE;
     
+    // Chunking configuration
+    this.chunkSize = parseInt(core.getInput('chunk_size')) || CONFIG.DEFAULT_CHUNK_SIZE;
+    this.maxConcurrentRequests = parseInt(core.getInput('max_concurrent_requests')) || CONFIG.MAX_CONCURRENT_REQUESTS;
+    this.batchDelayMs = parseInt(core.getInput('batch_delay_ms')) || CONFIG.BATCH_DELAY_MS;
+    
     // GitHub context
     this.octokit = github.getOctokit(process.env.GITHUB_TOKEN);
     this.context = github.context;
@@ -224,7 +233,60 @@ class GitHubActionsReviewer {
   }
 
   /**
-   * Get full diff for all changed files
+   * Get diff for a single file
+   */
+  getFileDiff(filePath) {
+    try {
+      const diffCommand = `git diff origin/${this.baseBranch}...HEAD --unified=3 --no-prefix --ignore-blank-lines --ignore-space-at-eol --no-color -- "${filePath}"`;
+      const diff = execSync(diffCommand, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }); // 10MB buffer
+      return diff;
+    } catch (error) {
+      core.warning(`⚠️  Could not get diff for ${filePath}: ${error.message}`);
+      return '';
+    }
+  }
+
+  /**
+   * Split diff into chunks based on size
+   */
+  splitDiffIntoChunks(diff, maxChunkSize = null) {
+    const chunkSize = maxChunkSize || this.chunkSize;
+    if (!diff || diff.length === 0) {
+      return [];
+    }
+
+    const chunks = [];
+    let currentChunk = '';
+    let currentSize = 0;
+    
+    // Split by file boundaries (--- File: ... ---)
+    const fileSections = diff.split(/(?=--- File: )/);
+    
+    for (const section of fileSections) {
+      const sectionSize = Buffer.byteLength(section, 'utf8');
+      
+      // If adding this section would exceed chunk size, start a new chunk
+      if (currentSize + sectionSize > maxChunkSize && currentChunk.length > 0) {
+        chunks.push(currentChunk);
+        currentChunk = section;
+        currentSize = sectionSize;
+      } else {
+        currentChunk += section;
+        currentSize += sectionSize;
+      }
+    }
+    
+    // Add the last chunk if it has content
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk);
+    }
+    
+    core.info(`📦 Split diff into ${chunks.length} chunks (max ${Math.round(maxChunkSize / 1024)}KB each)`);
+    return chunks;
+  }
+
+  /**
+   * Get full diff for all changed files with chunking support
    */
   getFullDiff() {
     try {
@@ -234,14 +296,32 @@ class GitHubActionsReviewer {
         return '';
       }
 
-      // Join the file paths into a space-separated string
-      const fileArgs = changedFiles.map(f => `"${f}"`).join(' ');
-      core.info(`Generating diff for files: ${fileArgs}`);
+      core.info(`📊 Processing ${changedFiles.length} files for diff generation...`);
       
-      const diffCommand = `git diff origin/${this.baseBranch}...HEAD --unified=3 --no-prefix --ignore-blank-lines --ignore-space-at-eol --no-color ${fileArgs}`;      
-      const diff = execSync(diffCommand, { encoding: 'utf8' });
-      core.info(`Generated diff of length: ${diff.length}`);
-      return diff;
+      let allDiffs = [];
+      
+      // Process files one by one to avoid command line length issues
+      for (let i = 0; i < changedFiles.length; i++) {
+        const filePath = changedFiles[i];
+        core.info(`📄 Processing diff for: ${filePath} (${i + 1}/${changedFiles.length})`);
+        
+        const fileDiff = this.getFileDiff(filePath);
+        
+        if (fileDiff) {
+          const diffWithHeader = `\n--- File: ${filePath} ---\n${fileDiff}\n`;
+          allDiffs.push(diffWithHeader);
+        }
+      }
+      
+      const finalDiff = allDiffs.join('\n');
+      core.info(`✅ Generated diff of ${allDiffs.length} files, total size: ${Math.round(Buffer.byteLength(finalDiff, 'utf8') / 1024)}KB`);
+      
+      if (allDiffs.length === 0) {
+        core.warning('⚠️  No valid diffs could be generated for any files');
+        return '';
+      }
+      
+      return finalDiff;
     } catch (error) {
       core.error(`❌ Error getting diff: ${error.message}`);
       return '';
@@ -261,9 +341,9 @@ class GitHubActionsReviewer {
   }
 
   /**
-   * Call LLM API with the specified provider
+   * Call LLM API with the specified provider for a single chunk
    */
-  async callLLM(prompt, diff) {
+  async callLLMChunk(prompt, diffChunk, chunkIndex, totalChunks) {
     try {
       const { default: fetch } = await import('node-fetch');
       
@@ -278,12 +358,15 @@ class GitHubActionsReviewer {
         return null;
       }
 
-      core.info(`🤖 Calling ${this.provider.toUpperCase()} LLM...`);
+      // Create chunk-specific prompt
+      const chunkPrompt = `${prompt}\n\nThis is chunk ${chunkIndex + 1} of ${totalChunks}. Please review this portion of the code changes:`;
+      
+      core.info(`🤖 Calling ${this.provider.toUpperCase()} LLM for chunk ${chunkIndex + 1}/${totalChunks}...`);
       
       const response = await fetch(providerConfig.url, {
         method: 'POST',
         headers: providerConfig.headers(apiKey),
-        body: JSON.stringify(providerConfig.body(prompt, diff))
+        body: JSON.stringify(providerConfig.body(chunkPrompt, diffChunk))
       });
 
       if (!response.ok) {
@@ -291,15 +374,167 @@ class GitHubActionsReviewer {
       }
 
       const data = await response.json();
-      return providerConfig.extractResponse(data);
+      const result = providerConfig.extractResponse(data);
+      
+      core.info(`✅ Received response for chunk ${chunkIndex + 1}/${totalChunks}`);
+      return result;
     } catch (error) {
       if (error.message.includes('Cannot find module') || error.message.includes('node-fetch')) {
         core.error('❌ node-fetch not found. Please install it with: npm install node-fetch');
         return null;
       }
+      core.error(`❌ LLM review failed for chunk ${chunkIndex + 1}: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Call LLM API with chunking and concurrent processing
+   */
+  async callLLM(prompt, diff) {
+    try {
+      const apiKey = this.getApiKey();
+      if (!apiKey) {
+        core.warning(`⚠️  No ${this.provider.toUpperCase()} API key found. Skipping LLM review.`);
+        return null;
+      }
+
+      const diffSize = Buffer.byteLength(diff, 'utf8');
+      
+      // If diff is small enough, process it normally
+      if (diffSize <= this.chunkSize) {
+        core.info(`🤖 Processing single diff chunk (${Math.round(diffSize / 1024)}KB)...`);
+        return await this.callLLMChunk(prompt, diff, 0, 1);
+      }
+      
+      // Split diff into chunks
+      const chunks = this.splitDiffIntoChunks(diff);
+      
+      if (chunks.length === 0) {
+        core.warning('⚠️  No chunks created from diff');
+        return null;
+      }
+      
+      core.info(`🚀 Processing ${chunks.length} chunks concurrently...`);
+      
+      // Process chunks concurrently with rate limiting
+      const results = [];
+      
+      for (let i = 0; i < chunks.length; i += this.maxConcurrentRequests) {
+        const batch = chunks.slice(i, i + this.maxConcurrentRequests);
+        const batchPromises = batch.map((chunk, batchIndex) => 
+          this.callLLMChunk(prompt, chunk, i + batchIndex, chunks.length)
+        );
+        
+        core.info(`📦 Processing batch ${Math.floor(i / this.maxConcurrentRequests) + 1}/${Math.ceil(chunks.length / this.maxConcurrentRequests)} (${batch.length} chunks)`);
+        
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+        
+        // Add delay between batches to be respectful to API
+        if (i + this.maxConcurrentRequests < chunks.length) {
+          await new Promise(resolve => setTimeout(resolve, this.batchDelayMs));
+        }
+      }
+      
+      // Filter out failed responses and combine results
+      const validResults = results.filter(result => result !== null);
+      
+      if (validResults.length === 0) {
+        core.error('❌ All LLM API calls failed');
+        return null;
+      }
+      
+      if (validResults.length < chunks.length) {
+        core.warning(`⚠️  Only ${validResults.length}/${chunks.length} chunks processed successfully`);
+      }
+      
+      // Combine all responses
+      const combinedResponse = this.combineLLMResponses(validResults, chunks.length);
+      
+      core.info(`✅ Successfully processed ${validResults.length}/${chunks.length} chunks`);
+      return combinedResponse;
+      
+    } catch (error) {
       core.error(`❌ LLM review failed: ${error.message}`);
       return null;
     }
+  }
+
+  /**
+   * Combine multiple LLM responses into a single coherent review
+   */
+  combineLLMResponses(responses, totalChunks) {
+    if (responses.length === 0) {
+      return 'No review results available.';
+    }
+    
+    if (responses.length === 1) {
+      return responses[0];
+    }
+    
+    // Extract key information from each response
+    const summaries = [];
+    const criticalIssues = [];
+    const suggestions = [];
+    let mergeDecision = null;
+    
+    responses.forEach((response, index) => {
+      const lowerResponse = response.toLowerCase();
+      
+      // Extract summary
+      summaries.push(`**Chunk ${index + 1}/${totalChunks}:**\n${response}\n`);
+      
+      // Look for critical issues
+      for (const issue of CONFIG.CRITICAL_ISSUES) {
+        if (lowerResponse.includes(issue)) {
+          criticalIssues.push(`- ${issue} (found in chunk ${index + 1})`);
+        }
+      }
+      
+      // Look for merge decisions
+      for (const phrase of CONFIG.BLOCKING_PHRASES) {
+        if (lowerResponse.includes(phrase)) {
+          mergeDecision = 'BLOCK';
+          break;
+        }
+      }
+      
+      if (!mergeDecision) {
+        for (const phrase of CONFIG.APPROVAL_PHRASES) {
+          if (lowerResponse.includes(phrase)) {
+            mergeDecision = 'APPROVE';
+            break;
+          }
+        }
+      }
+    });
+    
+    // Create combined response
+    let combinedResponse = `## 🔄 **Combined Review Results**\n\n`;
+    combinedResponse += `*This review was generated from ${responses.length} chunks of the diff*\n\n`;
+    
+    // Add overall decision
+    if (mergeDecision === 'BLOCK') {
+      combinedResponse += `### ❌ **OVERALL DECISION: DO NOT MERGE**\n\n`;
+    } else if (mergeDecision === 'APPROVE') {
+      combinedResponse += `### ✅ **OVERALL DECISION: SAFE TO MERGE**\n\n`;
+    } else {
+      combinedResponse += `### ⚠️ **OVERALL DECISION: MANUAL REVIEW RECOMMENDED**\n\n`;
+    }
+    
+    // Add critical issues summary
+    if (criticalIssues.length > 0) {
+      combinedResponse += `### 🚨 **Critical Issues Found:**\n`;
+      combinedResponse += [...new Set(criticalIssues)].join('\n');
+      combinedResponse += `\n\n`;
+    }
+    
+    // Add individual chunk reviews
+    combinedResponse += `### 📋 **Detailed Reviews by Chunk:**\n\n`;
+    combinedResponse += summaries.join('\n---\n\n');
+    
+    return combinedResponse;
   }
 
   /**
@@ -419,7 +654,10 @@ ${shouldBlockMerge
     core.info(`  - Review Date: ${new Date().toLocaleString()}`);
     core.info(`  - Reviewer: ${this.provider.toUpperCase()} LLM`);
     core.info(`  - Path to Files: ${this.pathToFiles.join(', ')}`);
-    core.info(`  - PR Number: ${(this.context.issue && this.context.issue.number) || 'Not available'}\n`);
+    core.info(`  - PR Number: ${(this.context.issue && this.context.issue.number) || 'Not available'}`);
+    core.info(`  - Chunk Size: ${Math.round(this.chunkSize / 1024)}KB`);
+    core.info(`  - Max Concurrent Requests: ${this.maxConcurrentRequests}`);
+    core.info(`  - Batch Delay: ${this.batchDelayMs}ms\n`);
   }
 
   /**

@@ -29,6 +29,18 @@ inputs:
   claude_api_key:
     description: 'Claude API key (required if provider is claude)'
     required: false
+  chunk_size:
+    description: 'Maximum size of each diff chunk in bytes (default: 102400 = 100KB)'
+    required: false
+    default: '102400'
+  max_concurrent_requests:
+    description: 'Maximum number of concurrent API requests (default: 3)'
+    required: false
+    default: '3'
+  batch_delay_ms:
+    description: 'Delay between batches of API requests in milliseconds (default: 1000)'
+    required: false
+    default: '1000'
 
 runs:
   using: 'node20'

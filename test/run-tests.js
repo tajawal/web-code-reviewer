@@ -38,6 +38,36 @@ const scenarios = {
       TEST_LLM_PROVIDER: 'openai'
     }
   },
+  'chunking-small': {
+    description: 'Test chunking with small chunks',
+    env: {
+      TEST_PATH_TO_FILES: 'src/',
+      TEST_LLM_PROVIDER: 'claude',
+      TEST_CHUNK_SIZE: '1024',
+      TEST_MAX_CONCURRENT_REQUESTS: '2',
+      TEST_BATCH_DELAY_MS: '500'
+    }
+  },
+  'chunking-high-concurrency': {
+    description: 'Test chunking with high concurrency',
+    env: {
+      TEST_PATH_TO_FILES: 'src/',
+      TEST_LLM_PROVIDER: 'claude',
+      TEST_CHUNK_SIZE: '2048',
+      TEST_MAX_CONCURRENT_REQUESTS: '5',
+      TEST_BATCH_DELAY_MS: '200'
+    }
+  },
+  'chunking-openai': {
+    description: 'Test chunking with OpenAI provider',
+    env: {
+      TEST_PATH_TO_FILES: 'src/',
+      TEST_LLM_PROVIDER: 'openai',
+      TEST_CHUNK_SIZE: '5120',
+      TEST_MAX_CONCURRENT_REQUESTS: '3',
+      TEST_BATCH_DELAY_MS: '1000'
+    }
+  },
   'custom': {
     description: 'Test with custom configuration',
     env: {
@@ -45,7 +75,10 @@ const scenarios = {
       TEST_LLM_PROVIDER: process.env.TEST_LLM_PROVIDER || 'claude',
       TEST_BASE_BRANCH: process.env.TEST_BASE_BRANCH || 'master',
       TEST_MAX_TOKENS: process.env.TEST_MAX_TOKENS || '2000',
-      TEST_TEMPERATURE: process.env.TEST_TEMPERATURE || '0.3'
+      TEST_TEMPERATURE: process.env.TEST_TEMPERATURE || '0.3',
+      TEST_CHUNK_SIZE: process.env.TEST_CHUNK_SIZE || '102400',
+      TEST_MAX_CONCURRENT_REQUESTS: process.env.TEST_MAX_CONCURRENT_REQUESTS || '3',
+      TEST_BATCH_DELAY_MS: process.env.TEST_BATCH_DELAY_MS || '1000'
     }
   }
 };
@@ -77,6 +110,9 @@ function runTest(scenarioName) {
   console.log('   TEST_LLM_PROVIDER:', process.env.TEST_LLM_PROVIDER);
   console.log('   TEST_PATH_TO_FILES:', process.env.TEST_PATH_TO_FILES);
   console.log('   TEST_BASE_BRANCH:', process.env.TEST_BASE_BRANCH);
+  console.log('   TEST_CHUNK_SIZE:', process.env.TEST_CHUNK_SIZE);
+  console.log('   TEST_MAX_CONCURRENT_REQUESTS:', process.env.TEST_MAX_CONCURRENT_REQUESTS);
+  console.log('   TEST_BATCH_DELAY_MS:', process.env.TEST_BATCH_DELAY_MS);
   console.log('   CLAUDE_API_KEY:', process.env.CLAUDE_API_KEY ? '***SET***' : 'NOT SET');
   console.log('   OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '***SET***' : 'NOT SET');
   console.log('');

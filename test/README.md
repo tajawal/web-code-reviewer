@@ -30,6 +30,9 @@ npm run test:multi
 # OpenAI provider test
 npm run test:openai
 
+# Chunking functionality test
+npm run test:chunking
+
 # Custom configuration test
 npm run test:custom
 ```
@@ -44,6 +47,9 @@ TEST_LLM_PROVIDER="openai" npm run test:custom
 
 # Test with custom parameters
 TEST_MAX_TOKENS="4000" TEST_TEMPERATURE="0.7" npm run test:custom
+
+# Test chunking with custom settings
+TEST_CHUNK_SIZE="2048" TEST_MAX_CONCURRENT_REQUESTS="5" npm run test:chunking
 ```
 
 ## 🔧 Test Scenarios
@@ -63,6 +69,17 @@ TEST_MAX_TOKENS="4000" TEST_TEMPERATURE="0.7" npm run test:custom
 - Verifies provider switching functionality
 - Tests different API response formats
 
+### Chunking Functionality Test
+- Tests the new diff chunking feature
+- Verifies concurrent API processing
+- Tests response combination logic
+- Validates chunk size limits and batching
+
+### Chunking Test Scenarios
+- **Small Chunks**: Tests with 1KB chunks to force chunking
+- **High Concurrency**: Tests with 5 concurrent requests
+- **OpenAI Chunking**: Tests chunking with OpenAI provider
+
 ### Custom Parameters Test
 - Tests with custom configuration
 - Allows environment variable overrides
@@ -80,6 +97,7 @@ TEST_MAX_TOKENS="4000" TEST_TEMPERATURE="0.7" npm run test:custom
 - Path filtering (single and multiple paths)
 - Base branch detection
 - LLM provider configuration
+- Chunking configuration and limits
 
 ### ✅ Mock Environment
 - GitHub Actions context simulation
@@ -93,11 +111,21 @@ TEST_MAX_TOKENS="4000" TEST_TEMPERATURE="0.7" npm run test:custom
 - Merge decision logic
 - Status reporting
 
+### ✅ Chunking and Concurrency
+- Diff chunking based on size limits
+- Concurrent API request processing
+- Response combination and analysis
+- Rate limiting and batching
+- Chunk-specific prompt generation
+
 ## 🔍 Test Output
 
 The tests will show:
 - Input parameters being used
 - File detection and filtering
+- Chunking configuration and processing
+- API call tracking and batching
+- Response combination results
 - Mock API calls
 - Generated PR comments
 - Final merge decisions
