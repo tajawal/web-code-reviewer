@@ -32131,10 +32131,15 @@ class GitHubActionsReviewer {
     this.maxTokens = parseInt(core.getInput('max_tokens')) || CONFIG.MAX_TOKENS;
     this.temperature = parseFloat(core.getInput('temperature')) || CONFIG.TEMPERATURE;
     
-    // Chunking configuration
-    this.chunkSize = parseInt(core.getInput('chunk_size')) || CONFIG.DEFAULT_CHUNK_SIZE;
-    this.maxConcurrentRequests = parseInt(core.getInput('max_concurrent_requests')) || CONFIG.MAX_CONCURRENT_REQUESTS;
-    this.batchDelayMs = parseInt(core.getInput('batch_delay_ms')) || CONFIG.BATCH_DELAY_MS;
+    // Chunking configuration - Always use CONFIG defaults
+    this.chunkSize = CONFIG.DEFAULT_CHUNK_SIZE;
+    this.maxConcurrentRequests = CONFIG.MAX_CONCURRENT_REQUESTS;
+    this.batchDelayMs = CONFIG.BATCH_DELAY_MS;
+    
+    core.info(`🔧 Using CONFIG defaults:`);
+    core.info(`   chunkSize: ${this.chunkSize} (${Math.round(this.chunkSize / 1024)}KB)`);
+    core.info(`   maxConcurrentRequests: ${this.maxConcurrentRequests}`);
+    core.info(`   batchDelayMs: ${this.batchDelayMs}`);
     
     // GitHub context
     this.octokit = github.getOctokit(process.env.GITHUB_TOKEN);
@@ -32251,8 +32256,15 @@ class GitHubActionsReviewer {
    */
   splitDiffIntoChunks(diff, maxChunkSize = null) {
     const chunkSize = maxChunkSize || this.chunkSize;
+    
     if (!diff || diff.length === 0) {
       return [];
+    }
+
+    // Ensure chunk size is reasonable
+    if (chunkSize <= 0) {
+      core.warning(`⚠️  Invalid chunk size: ${chunkSize}, using default: ${CONFIG.DEFAULT_CHUNK_SIZE}`);
+      return [diff]; // Return as single chunk if chunk size is invalid
     }
 
     const chunks = [];
@@ -32266,7 +32278,7 @@ class GitHubActionsReviewer {
       const sectionSize = Buffer.byteLength(section, 'utf8');
       
       // If adding this section would exceed chunk size, start a new chunk
-      if (currentSize + sectionSize > maxChunkSize && currentChunk.length > 0) {
+      if (currentSize + sectionSize > chunkSize && currentChunk.length > 0) {
         chunks.push(currentChunk);
         currentChunk = section;
         currentSize = sectionSize;
@@ -32281,7 +32293,13 @@ class GitHubActionsReviewer {
       chunks.push(currentChunk);
     }
     
-    core.info(`📦 Split diff into ${chunks.length} chunks (max ${Math.round(maxChunkSize / 1024)}KB each)`);
+    core.info(`📦 Split diff into ${chunks.length} chunks (max ${Math.round(chunkSize / 1024)}KB each)`);
+    
+    // Warn if too many chunks are created
+    if (chunks.length > 50) {
+      core.warning(`⚠️  Large number of chunks (${chunks.length}) created. Consider increasing chunk size.`);
+    }
+    
     return chunks;
   }
 
@@ -32655,9 +32673,17 @@ ${shouldBlockMerge
     core.info(`  - Reviewer: ${this.provider.toUpperCase()} LLM`);
     core.info(`  - Path to Files: ${this.pathToFiles.join(', ')}`);
     core.info(`  - PR Number: ${(this.context.issue && this.context.issue.number) || 'Not available'}`);
-    core.info(`  - Chunk Size: ${Math.round(this.chunkSize / 1024)}KB`);
+    core.info(`  - Chunk Size: ${Math.round(this.chunkSize / 1024)}KB (${this.chunkSize} bytes)`);
     core.info(`  - Max Concurrent Requests: ${this.maxConcurrentRequests}`);
-    core.info(`  - Batch Delay: ${this.batchDelayMs}ms\n`);
+    core.info(`  - Batch Delay: ${this.batchDelayMs}ms`);
+    
+    // Debug chunk size configuration
+    if (this.chunkSize <= 0) {
+      core.warning(`⚠️  WARNING: Chunk size is ${this.chunkSize} - this will cause excessive chunking!`);
+      core.warning(`   Check your chunk_size input parameter or CONFIG.DEFAULT_CHUNK_SIZE`);
+    }
+    
+    core.info('');
   }
 
   /**
