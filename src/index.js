@@ -15,7 +15,7 @@ const CONFIG = {
   MAX_TOKENS: 2000,
   TEMPERATURE: 0.3,
   // Chunking configuration
-  DEFAULT_CHUNK_SIZE: 100 * 1024, // 100KB default chunk size
+  DEFAULT_CHUNK_SIZE: 150 * 1024, // 100KB default chunk size
   MAX_CONCURRENT_REQUESTS: 1, // Reduced to 1 to avoid rate limits
   BATCH_DELAY_MS: 2000, // Increased delay between requests
   APPROVAL_PHRASES: [
@@ -135,11 +135,6 @@ class GitHubActionsReviewer {
     this.chunkSize = CONFIG.DEFAULT_CHUNK_SIZE;
     this.maxConcurrentRequests = CONFIG.MAX_CONCURRENT_REQUESTS;
     this.batchDelayMs = CONFIG.BATCH_DELAY_MS;
-    
-    core.info(`🔧 Using CONFIG defaults:`);
-    core.info(`   chunkSize: ${this.chunkSize} (${Math.round(this.chunkSize / 1024)}KB)`);
-    core.info(`   maxConcurrentRequests: ${this.maxConcurrentRequests}`);
-    core.info(`   batchDelayMs: ${this.batchDelayMs}`);
     
     // GitHub context
     this.octokit = github.getOctokit(process.env.GITHUB_TOKEN);
