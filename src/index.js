@@ -16,8 +16,8 @@ const CONFIG = {
   TEMPERATURE: 0.3,
   // Chunking configuration
   DEFAULT_CHUNK_SIZE: 100 * 1024, // 100KB default chunk size
-  MAX_CONCURRENT_REQUESTS: 3, // Maximum concurrent API calls
-  BATCH_DELAY_MS: 1000, // Delay between batches in milliseconds
+  MAX_CONCURRENT_REQUESTS: 1, // Reduced to 1 to avoid rate limits
+  BATCH_DELAY_MS: 2000, // Increased delay between requests
   APPROVAL_PHRASES: [
     'safe to merge', '✅ safe to merge', 'merge approved', 
     'no critical issues', 'safe to commit', 'approved for merge',
@@ -388,7 +388,31 @@ class GitHubActionsReviewer {
       });
 
       if (!response.ok) {
-        throw new Error(`${this.provider.toUpperCase()} API error: ${response.status} ${response.statusText}`);
+        if (response.status === 429) {
+          // Rate limit hit - wait and retry
+          const retryAfter = response.headers.get('retry-after') || 60;
+          core.warning(`⚠️  Rate limit hit for chunk ${chunkIndex + 1}. Waiting ${retryAfter} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          
+          // Retry the request
+          const retryResponse = await fetch(providerConfig.url, {
+            method: 'POST',
+            headers: providerConfig.headers(apiKey),
+            body: JSON.stringify(providerConfig.body(chunkPrompt, diffChunk))
+          });
+          
+          if (!retryResponse.ok) {
+            throw new Error(`${this.provider.toUpperCase()} API error after retry: ${retryResponse.status} ${retryResponse.statusText}`);
+          }
+          
+          const retryData = await retryResponse.json();
+          const retryResult = providerConfig.extractResponse(retryData);
+          
+          core.info(`✅ Received response for chunk ${chunkIndex + 1}/${totalChunks} after retry`);
+          return retryResult;
+        } else {
+          throw new Error(`${this.provider.toUpperCase()} API error: ${response.status} ${response.statusText}`);
+        }
       }
 
       const data = await response.json();
@@ -433,24 +457,22 @@ class GitHubActionsReviewer {
         return null;
       }
       
-      core.info(`🚀 Processing ${chunks.length} chunks concurrently...`);
+      core.info(`🚀 Processing ${chunks.length} chunks sequentially...`);
       
-      // Process chunks concurrently with rate limiting
+      // Process chunks sequentially to avoid rate limits
       const results = [];
       
-      for (let i = 0; i < chunks.length; i += this.maxConcurrentRequests) {
-        const batch = chunks.slice(i, i + this.maxConcurrentRequests);
-        const batchPromises = batch.map((chunk, batchIndex) => 
-          this.callLLMChunk(prompt, chunk, i + batchIndex, chunks.length)
-        );
+      core.info(`📦 Processing ${chunks.length} chunks sequentially to avoid rate limits...`);
+      
+      for (let i = 0; i < chunks.length; i++) {
+        core.info(`📦 Processing chunk ${i + 1}/${chunks.length}`);
         
-        core.info(`📦 Processing batch ${Math.floor(i / this.maxConcurrentRequests) + 1}/${Math.ceil(chunks.length / this.maxConcurrentRequests)} (${batch.length} chunks)`);
+        const result = await this.callLLMChunk(prompt, chunks[i], i, chunks.length);
+        results.push(result);
         
-        const batchResults = await Promise.all(batchPromises);
-        results.push(...batchResults);
-        
-        // Add delay between batches to be respectful to API
-        if (i + this.maxConcurrentRequests < chunks.length) {
+        // Add delay between requests to be respectful to API
+        if (i + 1 < chunks.length) {
+          core.info(`⏳ Waiting ${this.batchDelayMs}ms before next request...`);
           await new Promise(resolve => setTimeout(resolve, this.batchDelayMs));
         }
       }
