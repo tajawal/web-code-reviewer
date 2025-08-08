@@ -16,9 +16,9 @@ inputs:
     required: false
     default: 'develop'
   max_tokens:
-    description: 'Maximum tokens for LLM response'
+    description: 'Maximum tokens for LLM response (recommended: 4000-6000 for comprehensive reviews)'
     required: false
-    default: '2000'
+    default: '5000'
   temperature:
     description: 'Temperature for LLM response (0.0-1.0)'
     required: false

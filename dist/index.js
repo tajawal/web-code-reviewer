@@ -32012,10 +32012,10 @@ const CONFIG = {
   DEFAULT_PROVIDER: 'claude',
   DEFAULT_PATH_TO_FILES: 'packages/',
   IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js'],
-  MAX_TOKENS: 2000,
-  TEMPERATURE: 0.3,
+  MAX_TOKENS: 3000, // Increased for comprehensive code reviews
+  TEMPERATURE: 0.3, // Optimal for consistent analytical responses
   // Chunking configuration
-  DEFAULT_CHUNK_SIZE: 150 * 1024, // 100KB default chunk size
+  DEFAULT_CHUNK_SIZE: 300 * 1024, // 300KB default chunk size (optimized for Claude Sonnet 4)
   MAX_CONCURRENT_REQUESTS: 1, // Reduced to 1 to avoid rate limits
   BATCH_DELAY_MS: 2000, // Increased delay between requests
   APPROVAL_PHRASES: [
@@ -32342,6 +32342,133 @@ class GitHubActionsReviewer {
   }
 
   /**
+   * Estimate token count for text (rough approximation)
+   */
+  estimateTokenCount(prompt, diff) {
+    // Rough estimation: ~4 characters per token for code
+    const totalText = prompt + diff;
+    return Math.ceil(totalText.length / 4);
+  }
+
+  /**
+   * Create optimized prompt for chunk processing
+   */
+  createChunkPrompt(prompt, chunkIndex, totalChunks) {
+    if (totalChunks === 1) {
+      return prompt;
+    }
+    
+    return `${prompt}
+
+**CHUNK CONTEXT:** This is chunk ${chunkIndex + 1} of ${totalChunks} total chunks.
+**INSTRUCTIONS:** 
+- Review this specific portion of the code changes
+- Focus on issues that are relevant to this chunk
+- If you find critical issues, mark them clearly
+- Provide specific, actionable feedback for this code section
+- Consider how this chunk relates to the overall changes
+
+**CODE CHANGES TO REVIEW:**`;
+  }
+
+  /**
+   * Process chunks with adaptive concurrency based on chunk count
+   */
+  async processChunksIntelligently(prompt, chunks) {
+    const results = [];
+    
+    if (chunks.length <= 3) {
+      // For small numbers, process sequentially with delays
+      core.info(`📦 Processing ${chunks.length} chunks sequentially (small batch)`);
+      
+      for (let i = 0; i < chunks.length; i++) {
+        core.info(`📦 Processing chunk ${i + 1}/${chunks.length}`);
+        
+        const result = await this.callLLMChunk(prompt, chunks[i], i, chunks.length);
+        results.push(result);
+        
+        if (i + 1 < chunks.length) {
+          core.info(`⏳ Waiting ${this.batchDelayMs}ms before next request...`);
+          await new Promise(resolve => setTimeout(resolve, this.batchDelayMs));
+        }
+      }
+    } else {
+      // For larger numbers, use controlled concurrency
+      const maxConcurrent = Math.min(2, chunks.length); // Max 2 concurrent requests
+      core.info(`📦 Processing ${chunks.length} chunks with controlled concurrency (max ${maxConcurrent})`);
+      
+      for (let i = 0; i < chunks.length; i += maxConcurrent) {
+        const batch = chunks.slice(i, i + maxConcurrent);
+        const batchPromises = batch.map((chunk, batchIndex) => 
+          this.callLLMChunk(prompt, chunk, i + batchIndex, chunks.length)
+        );
+        
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+        
+        // Add delay between batches
+        if (i + maxConcurrent < chunks.length) {
+          core.info(`⏳ Waiting ${this.batchDelayMs}ms before next batch...`);
+          await new Promise(resolve => setTimeout(resolve, this.batchDelayMs));
+        }
+      }
+    }
+    
+    return results;
+  }
+
+  /**
+   * Parse error response from API
+   */
+  parseErrorResponse(errorText) {
+    try {
+      const errorData = JSON.parse(errorText);
+      return errorData.error?.message || errorData.message || errorText;
+    } catch {
+      return errorText;
+    }
+  }
+
+  /**
+   * Handle token limit exceeded errors
+   */
+  handleTokenLimitExceeded(chunkIndex, totalChunks) {
+    core.warning(`⚠️  Token limit exceeded for chunk ${chunkIndex + 1}. Creating summary review...`);
+    
+    return `**CHUNK ${chunkIndex + 1}/${totalChunks} - TOKEN LIMIT EXCEEDED**
+
+This chunk was too large to process completely. Here's a summary of what was detected:
+
+🔍 **Large Code Changes Detected**
+- This chunk contains significant code changes
+- Manual review recommended for this section
+- Consider breaking down large files into smaller changes
+
+⚠️ **Recommendation**: Please review this code section manually to ensure:
+- No security vulnerabilities
+- Proper error handling
+- Performance considerations
+- Code quality standards
+
+*Note: This is an automated summary due to token limits. Full review requires manual inspection.*`;
+  }
+
+  /**
+   * Validate LLM response structure
+   */
+  validateLLMResponse(data, provider) {
+    if (!data) return false;
+    
+    if (provider === 'claude') {
+      return data.content && Array.isArray(data.content) && data.content.length > 0;
+    } else if (provider === 'openai') {
+      return data.choices && Array.isArray(data.choices) && data.choices.length > 0;
+    }
+    
+    return false;
+  }
+
+  /**
    * Get API key for the current provider
    */
   getApiKey() {
@@ -32354,79 +32481,109 @@ class GitHubActionsReviewer {
   }
 
   /**
-   * Call LLM API with the specified provider for a single chunk
+   * Call LLM API for a single chunk with improved error handling and retry logic
    */
   async callLLMChunk(prompt, diffChunk, chunkIndex, totalChunks) {
-    try {
-      const { default: fetch } = await __nccwpck_require__.e(/* import() */ 816).then(__nccwpck_require__.bind(__nccwpck_require__, 816));
-      
-      const providerConfig = LLM_PROVIDERS[this.provider];
-      if (!providerConfig) {
-        throw new Error(`Unsupported LLM provider: ${this.provider}`);
-      }
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second base delay
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const { default: fetch } = await __nccwpck_require__.e(/* import() */ 816).then(__nccwpck_require__.bind(__nccwpck_require__, 816));
+        
+        const providerConfig = LLM_PROVIDERS[this.provider];
+        if (!providerConfig) {
+          throw new Error(`Unsupported LLM provider: ${this.provider}`);
+        }
 
-      const apiKey = this.getApiKey();
-      if (!apiKey) {
-        core.warning(`⚠️  No ${this.provider.toUpperCase()} API key found. Skipping LLM review.`);
-        return null;
-      }
+        const apiKey = this.getApiKey();
+        if (!apiKey) {
+          core.warning(`⚠️  No ${this.provider.toUpperCase()} API key found. Skipping LLM review.`);
+          return null;
+        }
 
-      // Create chunk-specific prompt
-      const chunkPrompt = `${prompt}\n\nThis is chunk ${chunkIndex + 1} of ${totalChunks}. Please review this portion of the code changes:`;
-      
-      core.info(`🤖 Calling ${this.provider.toUpperCase()} LLM for chunk ${chunkIndex + 1}/${totalChunks}...`);
-      
-      const response = await fetch(providerConfig.url, {
-        method: 'POST',
-        headers: providerConfig.headers(apiKey),
-        body: JSON.stringify(providerConfig.body(chunkPrompt, diffChunk))
-      });
+        // Estimate token count for this chunk
+        const estimatedTokens = this.estimateTokenCount(prompt, diffChunk);
+        if (estimatedTokens > 180000) { // Leave buffer for Claude's 200k limit
+          core.warning(`⚠️  Chunk ${chunkIndex + 1} estimated at ${estimatedTokens} tokens - may exceed limits`);
+        }
 
-      if (!response.ok) {
-        if (response.status === 429) {
-          // Rate limit hit - wait and retry
-          const retryAfter = response.headers.get('retry-after') || 60;
-          core.warning(`⚠️  Rate limit hit for chunk ${chunkIndex + 1}. Waiting ${retryAfter} seconds...`);
-          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+        // Create chunk-specific prompt with better context
+        const chunkPrompt = this.createChunkPrompt(prompt, chunkIndex, totalChunks);
+        
+        core.info(`🤖 Calling ${this.provider.toUpperCase()} LLM for chunk ${chunkIndex + 1}/${totalChunks} (attempt ${attempt}/${maxRetries})...`);
+        
+        const response = await fetch(providerConfig.url, {
+          method: 'POST',
+          headers: providerConfig.headers(apiKey),
+          body: JSON.stringify(providerConfig.body(chunkPrompt, diffChunk)),
+          timeout: 60000 // 60 second timeout
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const errorData = this.parseErrorResponse(errorText);
           
-          // Retry the request
-          const retryResponse = await fetch(providerConfig.url, {
-            method: 'POST',
-            headers: providerConfig.headers(apiKey),
-            body: JSON.stringify(providerConfig.body(chunkPrompt, diffChunk))
-          });
-          
-          if (!retryResponse.ok) {
-            throw new Error(`${this.provider.toUpperCase()} API error after retry: ${retryResponse.status} ${retryResponse.statusText}`);
+          if (response.status === 429) {
+            // Rate limit - exponential backoff
+            const retryAfter = parseInt(response.headers.get('retry-after')) || Math.pow(2, attempt);
+            core.warning(`⚠️  Rate limit hit for chunk ${chunkIndex + 1}. Waiting ${retryAfter}s (attempt ${attempt}/${maxRetries})...`);
+            await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+            continue; // Retry with next attempt
+          } else if (response.status === 400 && errorData.includes('token')) {
+            // Token limit exceeded
+            core.error(`❌ Token limit exceeded for chunk ${chunkIndex + 1}: ${errorData}`);
+            return this.handleTokenLimitExceeded(chunkIndex, totalChunks);
+          } else if (response.status >= 500) {
+            // Server error - retry with exponential backoff
+            const delay = baseDelay * Math.pow(2, attempt - 1);
+            core.warning(`⚠️  Server error (${response.status}) for chunk ${chunkIndex + 1}. Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          } else {
+            throw new Error(`${this.provider.toUpperCase()} API error: ${response.status} ${response.statusText} - ${errorData}`);
           }
-          
-          const retryData = await retryResponse.json();
-          const retryResult = providerConfig.extractResponse(retryData);
-          
-          core.info(`✅ Received response for chunk ${chunkIndex + 1}/${totalChunks} after retry`);
-          return retryResult;
+        }
+
+        const data = await response.json();
+        
+        // Validate response structure
+        if (!this.validateLLMResponse(data, this.provider)) {
+          throw new Error(`Invalid response structure from ${this.provider.toUpperCase()} API`);
+        }
+        
+        const result = providerConfig.extractResponse(data);
+        
+        // Validate extracted response
+        if (!result || typeof result !== 'string' || result.trim().length === 0) {
+          throw new Error(`Empty or invalid response from ${this.provider.toUpperCase()} API`);
+        }
+        
+        core.info(`✅ Received valid response for chunk ${chunkIndex + 1}/${totalChunks} (${result.length} chars)`);
+        return result;
+        
+      } catch (error) {
+        if (error.message.includes('Cannot find module') || error.message.includes('node-fetch')) {
+          core.error('❌ node-fetch not found. Please install it with: npm install node-fetch');
+          return null;
+        }
+        
+        if (attempt === maxRetries) {
+          core.error(`❌ LLM review failed for chunk ${chunkIndex + 1} after ${maxRetries} attempts: ${error.message}`);
+          return null;
         } else {
-          throw new Error(`${this.provider.toUpperCase()} API error: ${response.status} ${response.statusText}`);
+          const delay = baseDelay * Math.pow(2, attempt - 1);
+          core.warning(`⚠️  Attempt ${attempt}/${maxRetries} failed for chunk ${chunkIndex + 1}. Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
-
-      const data = await response.json();
-      const result = providerConfig.extractResponse(data);
-      
-      core.info(`✅ Received response for chunk ${chunkIndex + 1}/${totalChunks}`);
-      return result;
-    } catch (error) {
-      if (error.message.includes('Cannot find module') || error.message.includes('node-fetch')) {
-        core.error('❌ node-fetch not found. Please install it with: npm install node-fetch');
-        return null;
-      }
-      core.error(`❌ LLM review failed for chunk ${chunkIndex + 1}: ${error.message}`);
-      return null;
     }
+    
+    return null;
   }
 
   /**
-   * Call LLM API with chunking and concurrent processing
+   * Call LLM API with improved chunking and intelligent processing
    */
   async callLLM(prompt, diff) {
     try {
@@ -32437,14 +32594,17 @@ class GitHubActionsReviewer {
       }
 
       const diffSize = Buffer.byteLength(diff, 'utf8');
+      const estimatedTokens = this.estimateTokenCount(prompt, diff);
+      
+      core.info(`📊 Diff analysis: ${Math.round(diffSize / 1024)}KB, ~${estimatedTokens} tokens`);
       
       // If diff is small enough, process it normally
-      if (diffSize <= this.chunkSize) {
-        core.info(`🤖 Processing single diff chunk (${Math.round(diffSize / 1024)}KB)...`);
+      if (diffSize <= this.chunkSize && estimatedTokens < 150000) {
+        core.info(`🤖 Processing single diff chunk (${Math.round(diffSize / 1024)}KB, ~${estimatedTokens} tokens)...`);
         return await this.callLLMChunk(prompt, diff, 0, 1);
       }
       
-      // Split diff into chunks
+      // Split diff into chunks with intelligent sizing
       const chunks = this.splitDiffIntoChunks(diff);
       
       if (chunks.length === 0) {
@@ -32452,25 +32612,10 @@ class GitHubActionsReviewer {
         return null;
       }
       
-      core.info(`🚀 Processing ${chunks.length} chunks sequentially...`);
+      core.info(`🚀 Processing ${chunks.length} chunks with intelligent batching...`);
       
-      // Process chunks sequentially to avoid rate limits
-      const results = [];
-      
-      core.info(`📦 Processing ${chunks.length} chunks sequentially to avoid rate limits...`);
-      
-      for (let i = 0; i < chunks.length; i++) {
-        core.info(`📦 Processing chunk ${i + 1}/${chunks.length}`);
-        
-        const result = await this.callLLMChunk(prompt, chunks[i], i, chunks.length);
-        results.push(result);
-        
-        // Add delay between requests to be respectful to API
-        if (i + 1 < chunks.length) {
-          core.info(`⏳ Waiting ${this.batchDelayMs}ms before next request...`);
-          await new Promise(resolve => setTimeout(resolve, this.batchDelayMs));
-        }
-      }
+      // Process chunks with adaptive concurrency
+      const results = await this.processChunksIntelligently(prompt, chunks);
       
       // Filter out failed responses and combine results
       const validResults = results.filter(result => result !== null);
@@ -32484,7 +32629,7 @@ class GitHubActionsReviewer {
         core.warning(`⚠️  Only ${validResults.length}/${chunks.length} chunks processed successfully`);
       }
       
-      // Combine all responses
+      // Combine all responses with improved logic
       const combinedResponse = this.combineLLMResponses(validResults, chunks.length);
       
       core.info(`✅ Successfully processed ${validResults.length}/${chunks.length} chunks`);
@@ -32497,7 +32642,7 @@ class GitHubActionsReviewer {
   }
 
   /**
-   * Combine multiple LLM responses into a single coherent review
+   * Combine multiple LLM responses into a single coherent review with improved analysis
    */
   combineLLMResponses(responses, totalChunks) {
     if (responses.length === 0) {
@@ -32508,64 +32653,61 @@ class GitHubActionsReviewer {
       return responses[0];
     }
     
-    // Extract key information from each response
+    // Extract and categorize information from each response
     const summaries = [];
     const criticalIssues = [];
     const suggestions = [];
+    const performanceIssues = [];
+    const securityIssues = [];
+    const maintainabilityIssues = [];
+    const bestPracticeIssues = [];
     let mergeDecision = null;
+    let confidenceScore = 0;
     
     responses.forEach((response, index) => {
       const lowerResponse = response.toLowerCase();
       
-      // Extract summary
+      // Extract summary with chunk context
       summaries.push(`**Chunk ${index + 1}/${totalChunks}:**\n${response}\n`);
       
-      // Look for critical issues
-      for (const issue of CONFIG.CRITICAL_ISSUES) {
-        if (lowerResponse.includes(issue)) {
-          criticalIssues.push(`- ${issue} (found in chunk ${index + 1})`);
-        }
-      }
+      // Categorize issues by type
+      this.categorizeIssues(lowerResponse, index + 1, {
+        criticalIssues,
+        performanceIssues,
+        securityIssues,
+        maintainabilityIssues,
+        bestPracticeIssues
+      });
       
-      // Look for merge decisions
-      for (const phrase of CONFIG.BLOCKING_PHRASES) {
-        if (lowerResponse.includes(phrase)) {
-          mergeDecision = 'BLOCK';
-          break;
-        }
-      }
-      
-      if (!mergeDecision) {
-        for (const phrase of CONFIG.APPROVAL_PHRASES) {
-          if (lowerResponse.includes(phrase)) {
-            mergeDecision = 'APPROVE';
-            break;
-          }
+      // Look for merge decisions with confidence scoring
+      const decision = this.extractMergeDecision(lowerResponse);
+      if (decision) {
+        if (!mergeDecision) {
+          mergeDecision = decision;
+          confidenceScore = this.calculateConfidenceScore(lowerResponse);
+        } else if (decision !== mergeDecision) {
+          // Conflicting decisions - lower confidence
+          confidenceScore = Math.min(confidenceScore, 0.5);
         }
       }
     });
     
-    // Create combined response
-    let combinedResponse = `## 🔄 **Combined Review Results**\n\n`;
-    combinedResponse += `*This review was generated from ${responses.length} chunks of the diff*\n\n`;
+    // Create intelligent combined response
+    let combinedResponse = this.createCombinedResponseHeader(responses.length, totalChunks);
     
-    // Add overall decision
-    if (mergeDecision === 'BLOCK') {
-      combinedResponse += `### ❌ **OVERALL DECISION: DO NOT MERGE**\n\n`;
-    } else if (mergeDecision === 'APPROVE') {
-      combinedResponse += `### ✅ **OVERALL DECISION: SAFE TO MERGE**\n\n`;
-    } else {
-      combinedResponse += `### ⚠️ **OVERALL DECISION: MANUAL REVIEW RECOMMENDED**\n\n`;
-    }
+    // Add decision with confidence
+    combinedResponse += this.createDecisionSection(mergeDecision, confidenceScore);
     
-    // Add critical issues summary
-    if (criticalIssues.length > 0) {
-      combinedResponse += `### 🚨 **Critical Issues Found:**\n`;
-      combinedResponse += [...new Set(criticalIssues)].join('\n');
-      combinedResponse += `\n\n`;
-    }
+    // Add categorized issues
+    combinedResponse += this.createIssuesSummary({
+      criticalIssues,
+      performanceIssues,
+      securityIssues,
+      maintainabilityIssues,
+      bestPracticeIssues
+    });
     
-    // Add individual chunk reviews
+    // Add detailed reviews
     combinedResponse += `### 📋 **Detailed Reviews by Chunk:**\n\n`;
     combinedResponse += summaries.join('\n---\n\n');
     
@@ -32744,6 +32886,177 @@ ${shouldBlockMerge
     } else {
       core.info('✅ MERGE APPROVED: No critical issues found. Safe to merge.');
     }
+  }
+
+  /**
+   * Categorize issues by type from response text
+   */
+  categorizeIssues(responseText, chunkIndex, categories) {
+    // Critical issues
+    for (const issue of CONFIG.CRITICAL_ISSUES) {
+      if (responseText.includes(issue)) {
+        categories.criticalIssues.push(`- ${issue} (chunk ${chunkIndex})`);
+      }
+    }
+    
+    // Performance issues
+    const performanceKeywords = ['performance', 'slow', 'inefficient', 'memory leak', 're-render', 'optimization'];
+    for (const keyword of performanceKeywords) {
+      if (responseText.includes(keyword)) {
+        categories.performanceIssues.push(`- Performance concern: ${keyword} (chunk ${chunkIndex})`);
+      }
+    }
+    
+    // Security issues
+    const securityKeywords = ['security', 'vulnerability', 'xss', 'csrf', 'injection', 'authentication', 'authorization'];
+    for (const keyword of securityKeywords) {
+      if (responseText.includes(keyword)) {
+        categories.securityIssues.push(`- Security concern: ${keyword} (chunk ${chunkIndex})`);
+      }
+    }
+    
+    // Maintainability issues
+    const maintainabilityKeywords = ['maintainability', 'complexity', 'readability', 'refactor', 'clean code'];
+    for (const keyword of maintainabilityKeywords) {
+      if (responseText.includes(keyword)) {
+        categories.maintainabilityIssues.push(`- Maintainability concern: ${keyword} (chunk ${chunkIndex})`);
+      }
+    }
+    
+    // Best practices issues
+    const bestPracticeKeywords = ['best practice', 'anti-pattern', 'code smell', 'standard', 'convention'];
+    for (const keyword of bestPracticeKeywords) {
+      if (responseText.includes(keyword)) {
+        categories.bestPracticeIssues.push(`- Best practice concern: ${keyword} (chunk ${chunkIndex})`);
+      }
+    }
+  }
+
+  /**
+   * Extract merge decision from response text
+   */
+  extractMergeDecision(responseText) {
+    // Check for blocking phrases first
+    for (const phrase of CONFIG.BLOCKING_PHRASES) {
+      if (responseText.includes(phrase)) {
+        return 'BLOCK';
+      }
+    }
+    
+    // Check for approval phrases
+    for (const phrase of CONFIG.APPROVAL_PHRASES) {
+      if (responseText.includes(phrase)) {
+        return 'APPROVE';
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Calculate confidence score for merge decision
+   */
+  calculateConfidenceScore(responseText) {
+    let score = 0.5; // Base score
+    
+    // Higher confidence for explicit decisions
+    if (responseText.includes('safe to merge') || responseText.includes('do not merge')) {
+      score += 0.3;
+    }
+    
+    // Higher confidence for detailed reasoning
+    if (responseText.includes('because') || responseText.includes('reason')) {
+      score += 0.2;
+    }
+    
+    // Lower confidence for uncertain language
+    if (responseText.includes('maybe') || responseText.includes('possibly') || responseText.includes('consider')) {
+      score -= 0.2;
+    }
+    
+    return Math.max(0.1, Math.min(1.0, score));
+  }
+
+  /**
+   * Create combined response header
+   */
+  createCombinedResponseHeader(processedChunks, totalChunks) {
+    let header = `## 🔄 **Combined Review Results**\n\n`;
+    header += `*This review was generated from ${processedChunks}/${totalChunks} chunks of the diff*\n\n`;
+    
+    if (processedChunks < totalChunks) {
+      header += `⚠️ **Note**: ${totalChunks - processedChunks} chunks failed to process and were excluded from this review.\n\n`;
+    }
+    
+    return header;
+  }
+
+  /**
+   * Create decision section with confidence
+   */
+  createDecisionSection(decision, confidence) {
+    let section = '';
+    
+    if (decision === 'BLOCK') {
+      section += `### ❌ **OVERALL DECISION: DO NOT MERGE**\n\n`;
+      if (confidence < 0.7) {
+        section += `*Confidence: ${Math.round(confidence * 100)}% - Manual review strongly recommended*\n\n`;
+      }
+    } else if (decision === 'APPROVE') {
+      section += `### ✅ **OVERALL DECISION: SAFE TO MERGE**\n\n`;
+      if (confidence < 0.8) {
+        section += `*Confidence: ${Math.round(confidence * 100)}% - Consider additional review*\n\n`;
+      }
+    } else {
+      section += `### ⚠️ **OVERALL DECISION: MANUAL REVIEW RECOMMENDED**\n\n`;
+      section += `*No clear decision from automated review - human review required*\n\n`;
+    }
+    
+    return section;
+  }
+
+  /**
+   * Create issues summary section
+   */
+  createIssuesSummary(issues) {
+    let summary = '';
+    
+    // Critical issues (always shown first)
+    if (issues.criticalIssues.length > 0) {
+      summary += `### 🚨 **Critical Issues Found:**\n`;
+      summary += [...new Set(issues.criticalIssues)].join('\n');
+      summary += `\n\n`;
+    }
+    
+    // Security issues
+    if (issues.securityIssues.length > 0) {
+      summary += `### 🔒 **Security Concerns:**\n`;
+      summary += [...new Set(issues.securityIssues)].join('\n');
+      summary += `\n\n`;
+    }
+    
+    // Performance issues
+    if (issues.performanceIssues.length > 0) {
+      summary += `### ⚡ **Performance Concerns:**\n`;
+      summary += [...new Set(issues.performanceIssues)].join('\n');
+      summary += `\n\n`;
+    }
+    
+    // Maintainability issues
+    if (issues.maintainabilityIssues.length > 0) {
+      summary += `### 🛠️ **Maintainability Concerns:**\n`;
+      summary += [...new Set(issues.maintainabilityIssues)].join('\n');
+      summary += `\n\n`;
+    }
+    
+    // Best practices issues
+    if (issues.bestPracticeIssues.length > 0) {
+      summary += `### 📚 **Best Practice Concerns:**\n`;
+      summary += [...new Set(issues.bestPracticeIssues)].join('\n');
+      summary += `\n\n`;
+    }
+    
+    return summary;
   }
 
   /**
