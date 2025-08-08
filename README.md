@@ -1,4 +1,4 @@
-# 🤖 LLM Code Reviewer
+# 🤖 AI Enabled Specialized Code Reviewer
 
 A GitHub Action that performs automated code reviews using Large Language Models (Claude or OpenAI) for pull requests. This action analyzes code changes and provides detailed feedback on performance, security, maintainability, and best practices.
 
