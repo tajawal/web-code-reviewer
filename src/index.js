@@ -13,7 +13,7 @@ const CONFIG = {
   DEFAULT_PATH_TO_FILES: 'packages/',
   IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js'],
   MAX_TOKENS: 3000, // Increased for comprehensive code reviews
-  TEMPERATURE: 0.3, // Optimal for consistent analytical responses
+  TEMPERATURE: 0, // Optimal for consistent analytical responses
   // Chunking configuration
   DEFAULT_CHUNK_SIZE: 300 * 1024, // 300KB default chunk size (optimized for Claude Sonnet 4)
   MAX_CONCURRENT_REQUESTS: 1, // Reduced to 1 to avoid rate limits
@@ -92,23 +92,33 @@ Scope & Exclusions (very important)
 - Ignore style/formatting/naming/import order/semicolons/lint/prettier concerns, and any non-material preferences.
 - Do not assume code that is not shown. If essential context is missing, do NOT invent details: lower confidence and/or treat the point as a Suggestion.
 
-Severity Rubric
-- 🔴 Critical (Blocker) = any of:
-  • Security: XSS/unsafe HTML sinks, injection, CSRF on state-changing calls without protection, secret/PII exposure, insecure token storage.
-  • Performance: O(n²)+ hot paths, render thrash, heavy sync work in render, large lists without virtualization, event/timer/listener leaks, expensive deps in React hooks.
-  • Maintainability: unbounded complexity/duplicated core logic causing correctness risk, tight coupling breaking architecture, unhandled error paths that can crash user flows.
-  • Best Practices: patterns known to cause data loss, races, or reliability issues (e.g., array index as React key on dynamic lists; fetches without abort/timeout/retry in critical flows).
-- 🟡 Suggestion (Non-blocking) = clear-value improvements that are not safety/correctness critical.
+Severity Scoring (mandatory)
+For EACH issue, assign 0–5 scores:
+- impact
+- exploitability
+- likelihood
+- blast_radius
+- evidence_strength
+
+Compute:
+severity_score = 0.35*impact + 0.30*exploitability + 0.20*likelihood + 0.10*blast_radius + 0.05*evidence_strength
+
+Set "severity_proposed" using ONLY:
+- "critical" if severity_score ≥ 3.6 AND evidence_strength ≥ 3
+- otherwise "suggestion"
+
+Auto-critical overrides (regardless of score):
+- Unsanitized HTML sinks (e.g., innerHTML/dangerouslySetInnerHTML) with untrusted input
+- Secret/credential/API key embedded in client code
+- Unbounded listener/timer or render-time loop causing growth/leak
+- Direct DOM injection/navigation from untrusted input without validation/escaping
 
 Evidence Requirements (for EACH issue)
-- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence impact), fix (concise, code if helpful), tests (brief test idea), confidence ∈ [0,1].
-- Deduplicate repeated patterns by reporting one issue with an "occurrences" array of {file, lines}.
-
-Uncertain Context Policy (no questions)
-- If a conclusion depends on unknowns (e.g., behavior of a sanitize utility), do not speculate. Prefer a Suggestion with lower confidence rather than a Critical claim.
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
-- final_recommendation = "do_not_merge" if any 🔴 issue has confidence ≥ 0.6; otherwise "safe_to_merge".
+- final_recommendation = "do_not_merge" if any issue ends up "critical" with confidence ≥ 0.6; else "safe_to_merge".
 
 Output Format (JSON first, then a short human summary)
 Return THIS JSON object followed by a brief human-readable summary:
@@ -120,7 +130,15 @@ Return THIS JSON object followed by a brief human-readable summary:
     {
       "id": "SEC-01",
       "category": "security|performance|maintainability|best_practices",
-      "severity": "critical|suggestion",
+      "severity_proposed": "critical|suggestion",
+      "severity_score": 0.0,
+      "risk_factors": {
+        "impact": 0,
+        "exploitability": 0,
+        "likelihood": 0,
+        "blast_radius": 0,
+        "evidence_strength": 0
+      },
       "confidence": 0.0,
       "file": "src/components/Table.tsx",
       "lines": [120, 134],
@@ -139,14 +157,14 @@ Return THIS JSON object followed by a brief human-readable summary:
 \`\`\`
 
 Then add a short human summary:
-- Summary of key issues by category (bullets, ≤6 lines total)
+- Summary of key issues by category (bullets, ≤6 lines)
 - Final Recommendation: ✅ Safe to merge / ❌ Do NOT merge
 
 Frontend-specific checks (only if visible in diff)
 - React: unstable hook deps; heavy work in render; missing cleanup in useEffect; dangerouslySetInnerHTML; index-as-key on dynamic lists; consider Suspense/lazy for large modules.
-- TypeScript: any/unknown leakage at boundaries; unsafe narrowing; non-null assertions (!) masking nullability.
+- TypeScript: any/unknown leakage; unsafe narrowing; non-null assertions (!).
 - Fetch/IO: missing abort/timeout; lack of retry/backoff for critical calls; leaking subscriptions/websockets.
-- Accessibility: interactive elements without keyboard/focus handling (mark Critical only if it blocks core flows).
+- Accessibility: critical only if it blocks core flows.
 
 Context: Here are the code changes (diff or full files):`;
 
