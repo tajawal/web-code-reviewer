@@ -11,6 +11,7 @@ const CONFIG = {
   DEFAULT_BASE_BRANCH: 'develop',
   DEFAULT_PROVIDER: 'claude',
   DEFAULT_PATH_TO_FILES: 'packages/',
+  DEFAULT_LANGUAGE: 'js', // Default language for code review
   IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js'],
   MAX_TOKENS: 3000, // Increased for comprehensive code reviews
   TEMPERATURE: 0, // Optimal for consistent analytical responses
@@ -32,7 +33,30 @@ const CONFIG = {
     'security vulnerability', 'security issue', 'critical bug', 
     'memory leak', 'race condition', 'xss vulnerability',
     'authentication issue', 'authorization problem'
-  ]
+  ],
+  // Language-specific file extensions and patterns
+  LANGUAGE_CONFIGS: {
+    js: {
+      extensions: ['.js', '.jsx', '.ts', '.tsx', '.mjs'],
+      patterns: ['*.js', '*.jsx', '*.ts', '*.tsx', '*.mjs'],
+      name: 'JavaScript/TypeScript'
+    },
+    python: {
+      extensions: ['.py', '.pyw', '.pyx', '.pyi'],
+      patterns: ['*.py', '*.pyw', '*.pyx', '*.pyi'],
+      name: 'Python'
+    },
+    java: {
+      extensions: ['.java'],
+      patterns: ['*.java'],
+      name: 'Java'
+    },
+    php: {
+      extensions: ['.php'],
+      patterns: ['*.php'],
+      name: 'PHP'
+    }
+  }
 };
 
 /**
@@ -82,9 +106,10 @@ const LLM_PROVIDERS = {
 };
 
 /**
- * Review prompt template
+ * Language-specific review prompts
  */
-const REVIEW_PROMPT = `Role & Goal
+const LANGUAGE_PROMPTS = {
+  js: `Role & Goal
 You are a senior frontend engineer (10+ years) reviewing only the provided diff/files for enterprise web apps. Produce a single summary comment (no inline clutter) that highlights critical, hard-to-spot issues across Performance, Security, Maintainability, and Best Practices.
 
 Scope & Exclusions (very important)
@@ -169,7 +194,289 @@ Frontend-specific checks (only if visible in diff)
 - Fetch/IO: missing abort/timeout; lack of retry/backoff for critical calls; leaking subscriptions/websockets.
 - Accessibility: critical only if it blocks core flows.
 
-Context: Here are the code changes (diff or full files):`;
+Context: Here are the code changes (diff or full files):`,
+
+  python: `Role & Goal
+  You are a senior Python engineer (10+ years) reviewing only the provided diff/files for enterprise Python apps (APIs/services/data jobs). Produce a single summary comment (no inline clutter) that highlights critical, hard-to-spot issues across Performance, Security, Maintainability, and Best Practices.
+
+Scope & Exclusions (very important)
+- Focus on critical risks: exploitable security flaws, meaningful performance regressions, memory/resource leaks, unsafe patterns, architectural violations.
+- Ignore style/formatting/naming/import order/linters/auto-formatters, and any non-material preferences.
+- Do not assume code that is not shown. If essential context is missing, do NOT invent details: lower confidence and/or treat the point as a Suggestion.
+
+Severity Scoring (mandatory)
+For EACH issue, assign 0–5 scores:
+- impact
+- exploitability
+- likelihood
+- blast_radius
+- evidence_strength
+
+Compute:
+severity_score = 0.35*impact + 0.30*exploitability + 0.20*likelihood + 0.10*blast_radius + 0.05*evidence_strength
+
+Set "severity_proposed" using ONLY:
+- "critical" if severity_score ≥ 3.6 AND evidence_strength ≥ 3
+- otherwise "suggestion"
+
+Auto-critical overrides (regardless of score)
+- Unsafe code execution/deserialization on untrusted input (e.g., eval/exec, pickle.loads, yaml.load without SafeLoader).
+- Hard-coded secrets/credentials/API keys/private keys embedded in code or configs.
+- Unbounded loops/threads/timers or resource leaks (files/sockets/processes not closed; missing context managers) causing growth/leak.
+- Direct system/DB calls from untrusted input without validation/parameterization (e.g., subprocess(..., shell=true) or string-formatted SQL).
+
+Evidence Requirements (for EACH issue)
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
+
+Final Policy
+- final_recommendation = "do_not_merge" if any issue ends up "critical" with confidence ≥ 0.6; else "safe_to_merge".
+
+Output Format (JSON first, then a short human summary)
+Return THIS JSON object followed by a brief human-readable summary:
+
+\`\`\`json
+{
+  "summary": "1–3 sentences overall assessment.",
+  "issues": [
+    {
+      "id": "SEC-01",
+      "category": "security|performance|maintainability|best_practices",
+      "severity_proposed": "critical|suggestion",
+      "severity_score": 0.0,
+      "risk_factors": {
+        "impact": 0,
+        "exploitability": 0,
+        "likelihood": 0,
+        "blast_radius": 0,
+        "evidence_strength": 0
+      },
+      "confidence": 0.0,
+      "file": "app/services/user_service.py",
+      "lines": [120, 134],
+      "snippet": "<10-line minimal excerpt>",
+      "why_it_matters": "Concrete impact in 1 sentence.",
+      "fix": "Specific steps or code patch.",
+      "tests": "Brief test to prevent regression (e.g., pytest).",
+      "occurrences": [
+        {"file": "app/api/users.py", "lines": [88, 95]}
+      ]
+    }
+  ],
+  "metrics": { "critical_count": 0, "suggestion_count": 0 },
+  "final_recommendation": "safe_to_merge|do_not_merge"
+}
+\`\`\`
+
+Then add a short human summary:
+- Summary of key issues by category (bullets, ≤6 lines):
+  • 🔒 Security issues  
+  • ⚡ Performance issues  
+  • 🛠️ Maintainability issues  
+  • 📚 Best Practices issues
+
+Python-specific checks (only if visible in diff)
+- Web frameworks (Django/Flask/FastAPI): DEBUG=true in prod; missing CSRF where required; missing authz checks; raw/unparameterized SQL; path traversal in file ops; open redirects; overly permissive CORS.
+- I/O & Network: requests without timeouts/retries; verify=false on TLS; unbounded file/socket usage; missing context managers (with open(...)); large in-memory loads where streaming fits.
+- Concurrency & Async: blocking calls in async handlers; missing await; unjoined threads/processes; race conditions without locks; misuse of shared mutables.
+- Language & Stdlib: eval/exec; pickle/yaml.load (unsafe loader); subprocess(..., shell=true) with user input; broad except Exception swallowing errors; mutable default args; weak crypto for security (e.g., md5/sha1 for passwords, using random instead of secrets).
+
+Context: Here are the code changes (diff or full files):`,
+
+  java: `Role & Goal
+You are a senior Java engineer (10+ years) reviewing only the provided diff/files for enterprise Java apps (Spring Boot/Jakarta EE/microservices). Produce a single summary comment (no inline clutter) that highlights critical, hard-to-spot issues across Performance, Security, Maintainability, and Best Practices.
+
+Scope & Exclusions (very important)
+- Focus on critical risks: exploitable security flaws, meaningful performance regressions, memory/resource leaks, unsafe patterns, architectural violations.
+- Ignore style/formatting/naming/import order/checkstyle/spotless concerns, and any non-material preferences.
+- Do not assume code that is not shown. If essential context is missing, do NOT invent details: lower confidence and/or treat the point as a Suggestion.
+
+Severity Scoring (mandatory)
+For EACH issue, assign 0–5 scores:
+- impact
+- exploitability
+- likelihood
+- blast_radius
+- evidence_strength
+
+Compute:
+severity_score = 0.35*impact + 0.30*exploitability + 0.20*likelihood + 0.10*blast_radius + 0.05*evidence_strength
+
+Set "severity_proposed" using ONLY:
+- "critical" if severity_score ≥ 3.6 AND evidence_strength ≥ 3
+- otherwise "suggestion"
+
+Auto-critical overrides (regardless of score)
+- Unsafe deserialization / code execution on untrusted input (e.g., ObjectInputStream.readObject, Jackson default-typing enabling polymorphic deserialization, SnakeYAML load without safe config).
+- Hard-coded secrets/credentials/API keys/private keys in source or configs.
+- Command injection / shell execution using untrusted input (e.g., Runtime.getRuntime().exec, ProcessBuilder) without strict whitelisting.
+- SQL/JPQL injection via string concatenation (no prepared statements/parameter binding).
+- XXE / XML parser not hardened (no FEATURE_SECURE_PROCESSING, external entities enabled).
+- Unbounded thread pools/schedulers/timers or resource leaks (unclosed Connection/ResultSet/InputStream; missing try-with-resources) causing growth/leak.
+
+Evidence Requirements (for EACH issue)
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
+
+Final Policy
+- final_recommendation = "do_not_merge" if any issue ends up "critical" with confidence ≥ 0.6; else "safe_to_merge".
+
+Output Format (JSON first, then a short human summary)
+Return THIS JSON object followed by a brief human-readable summary:
+
+\`\`\`json
+{
+  "summary": "1–3 sentences overall assessment.",
+  "issues": [
+    {
+      "id": "SEC-01",
+      "category": "security|performance|maintainability|best_practices",
+      "severity_proposed": "critical|suggestion",
+      "severity_score": 0.0,
+      "risk_factors": {
+        "impact": 0,
+        "exploitability": 0,
+        "likelihood": 0,
+        "blast_radius": 0,
+        "evidence_strength": 0
+      },
+      "confidence": 0.0,
+      "file": "src/main/java/com/example/user/UserService.java",
+      "lines": [120, 134],
+      "snippet": "<10-line minimal excerpt>",
+      "why_it_matters": "Concrete impact in 1 sentence.",
+      "fix": "Specific steps or code patch.",
+      "tests": "Brief test to prevent regression (e.g., JUnit + MockMvc).",
+      "occurrences": [
+        {"file": "src/main/java/com/example/api/UserController.java", "lines": [88, 95]}
+      ]
+    }
+  ],
+  "metrics": { "critical_count": 0, "suggestion_count": 0 },
+  "final_recommendation": "safe_to_merge|do_not_merge"
+}
+\`\`\`
+
+Then add a short human summary:
+- Summary of key issues by category (bullets, ≤6 lines):
+  • 🔒 Security issues  
+  • ⚡ Performance issues  
+  • 🛠️ Maintainability issues  
+  • 📚 Best Practices issues
+
+Java-specific checks (only if visible in diff)
+- Web & REST (Spring/Jakarta): Missing authn/authz on endpoints; permissive CORS; user input directly into queries; unvalidated redirects; exposing stack traces in prod; @ControllerAdvice/exception handlers swallowing errors.
+- DB & ORM (JPA/Hibernate/MyBatis): N+1 queries; missing @Transactional where required; string-concatenated queries; lack of indices for hot lookups; incorrect fetch type (EAGER on large graphs).
+- I/O & HTTP clients: No timeouts/retries/circuit breakers (e.g., HttpClient, RestTemplate, WebClient); SSLSocketFactory/TLS verification disabled; large payloads buffered in memory instead of streaming.
+- Concurrency & Resources: Blocking calls on reactive/async threads; unbounded ExecutorService/Scheduler; not closing streams/sockets; missing try-with-resources; misuse of synchronized leading to contention; unsafe publication/races.
+- Security & Crypto: MessageDigest with MD5/SHA-1 for passwords (use bcrypt/Argon2/PBKDF2); SecureRandom vs Random for secrets; JWT without signature/verification; weak CSRF handling where applicable.
+- Serialization & XML/JSON: Jackson default typing enabling polymorphic gadget chains; SnakeYAML unsafe load; XML parsers without secure features (XXE).
+- Logging & Errors: Logging sensitive data (tokens/PII); excessive logging in hot paths; broad catch (Exception) suppressing failures.
+
+Context: Here are the code changes (diff or full files):`,
+
+php: `Role & Goal
+You are a senior PHP engineer (10+ years) reviewing only the provided diff/files for enterprise PHP apps (Laravel/Symfony/WordPress/custom frameworks). Produce a single summary comment (no inline clutter) that highlights critical, hard-to-spot issues across Performance, Security, Maintainability, and Best Practices.
+
+Scope & Exclusions (very important)
+- Focus on critical risks: exploitable security flaws, meaningful performance regressions, memory/resource leaks, unsafe patterns, architectural violations.
+- Ignore style/formatting/naming/import order/linters/auto-formatters (phpcs/php-cs-fixer) concerns, and any non-material preferences.
+- Do not assume code that is not shown. If essential context is missing, do NOT invent details: lower confidence and/or treat the point as a Suggestion.
+
+Severity Scoring (mandatory)
+For EACH issue, assign 0–5 scores:
+- impact
+- exploitability
+- likelihood
+- blast_radius
+- evidence_strength
+
+Compute:
+severity_score = 0.35*impact + 0.30*exploitability + 0.20*likelihood + 0.10*blast_radius + 0.05*evidence_strength
+
+Set "severity_proposed" using ONLY:
+- "critical" if severity_score ≥ 3.6 AND evidence_strength ≥ 3
+- otherwise "suggestion"
+
+Auto-critical overrides (regardless of score)
+- Unsafe deserialization/code execution on untrusted input (e.g., \\unserialize, \\eval, dynamic \\include/\\require from user input).
+- Hard-coded secrets/credentials/API keys/private keys in source or configs (e.g., committing .env values).
+- SQL injection via string concatenation (no prepared statements/parameter binding), or raw queries with user input.
+- Cross-site scripting (XSS): echoing unescaped user data in templates (Blade/Twig/Plain PHP) or building HTML with untrusted input.
+- CSRF missing/disabled on state-changing routes where framework support exists.
+- Insecure file upload/handling (no whitelist validation, storing in webroot, no size/MIME checks), path traversal in file operations.
+- Remote call risks: SSRF via cURL/Guzzle with unvalidated URLs, disabling TLS verification.
+- Long-running workers/daemons (queues/Swoole/RoadRunner) leaking memory/resources or unbounded retries.
+
+Evidence Requirements (for EACH issue)
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
+
+Final Policy
+- final_recommendation = "do_not_merge" if any issue ends up "critical" with confidence ≥ 0.6; else "safe_to_merge".
+
+Output Format (JSON first, then a short human summary)
+Return THIS JSON object followed by a brief human-readable summary:
+
+\`\`\`json
+{
+  "summary": "1–3 sentences overall assessment.",
+  "issues": [
+    {
+      "id": "SEC-01",
+      "category": "security|performance|maintainability|best_practices",
+      "severity_proposed": "critical|suggestion",
+      "severity_score": 0.0,
+      "risk_factors": {
+        "impact": 0,
+        "exploitability": 0,
+        "likelihood": 0,
+        "blast_radius": 0,
+        "evidence_strength": 0
+      },
+      "confidence": 0.0,
+      "file": "app/Http/Controllers/UserController.php",
+      "lines": [120, 134],
+      "snippet": "<10-line minimal excerpt>",
+      "why_it_matters": "Concrete impact in 1 sentence.",
+      "fix": "Specific steps or code patch.",
+      "tests": "Brief test to prevent regression (e.g., Pest/PHPUnit feature test).",
+      "occurrences": [
+        {"file": "resources/views/users/index.blade.php", "lines": [88, 95]}
+      ]
+    }
+  ],
+  "metrics": { "critical_count": 0, "suggestion_count": 0 },
+  "final_recommendation": "safe_to_merge|do_not_merge"
+}
+\`\`\`
+
+Then add a short human summary:
+- Summary of key issues by category (bullets, ≤6 lines):
+  • 🔒 Security issues
+  • ⚡ Performance issues
+  • 🛠️ Maintainability issues
+  • 📚 Best Practices issues
+
+PHP-specific checks (only if visible in diff)
+- Web & Routing (Laravel/Symfony): missing authn/authz middleware; overly permissive CORS; mass-assignment vulnerabilities (unguarded models/fillable misuse); missing validation/sanitization on request data; returning sensitive data in responses.
+- Views/Templates: unescaped output in Blade/Twig/echo; building HTML via string concatenation with user input; unsafe raw tags (\\{!! !!}\\).
+- Database/ORM: raw queries with concatenated input; N+1 queries (eager loading missing); transactions missing for multi-step writes; lack of indexes for hot lookups.
+- I/O & HTTP clients: cURL/Guzzle without timeouts/retries; TLS verification disabled; large payloads buffered in memory instead of streamed; not closing file handles.
+- Sessions & Cookies: weak cookie flags (no HttpOnly/Secure/SameSite); storing secrets/PII in session without encryption.
+- Crypto & Passwords: using md5/sha1 or \\password_hash without appropriate algorithm options; using \\rand for tokens instead of \\random_bytes/\\bin2hex.
+- Errors & Logging: exposing stack traces in production; logging sensitive data (tokens/PII); broad catch blocks hiding failures.
+- Workers/Queues/Schedulers: memory leaks from static caches/large arrays, unbounded retries, missing backoff/dead-letter handling.
+
+Context: Here are the code changes (diff or full files):`
+};
+
+/**
+ * Get review prompt for specific language
+ */
+function getReviewPrompt(language) {
+  return LANGUAGE_PROMPTS[language] || LANGUAGE_PROMPTS.js; // Default to JS if language not found
+}
 
 /**
  * GitHub Actions Code Reviewer
@@ -179,6 +486,7 @@ class GitHubActionsReviewer {
     // Get inputs from action
     this.provider = core.getInput('llm_provider') || CONFIG.DEFAULT_PROVIDER;
     this.pathToFiles = this.parsePathToFiles(core.getInput('path_to_files') || CONFIG.DEFAULT_PATH_TO_FILES);
+    this.language = core.getInput('language') || CONFIG.DEFAULT_LANGUAGE;
     this.maxTokens = parseInt(core.getInput('max_tokens')) || CONFIG.MAX_TOKENS;
     this.temperature = parseFloat(core.getInput('temperature')) || CONFIG.TEMPERATURE;
     
@@ -250,12 +558,13 @@ class GitHubActionsReviewer {
   }
 
   /**
-   * Get changed files from git diff
+   * Get changed files from git diff with language filtering
    */
   getChangedFiles() {
     try {
       core.info('🔍 Detecting changed files...');
       core.info(`Comparing ${this.context.sha} against origin/${this.baseBranch}`);
+      core.info(`🔤 Language filter: ${this.language} (${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || 'Unknown'})`);
       
       const rawOutput = execSync(`git diff --name-only origin/${this.baseBranch}...HEAD`, { encoding: 'utf8' });
       const allFiles = rawOutput
@@ -271,16 +580,32 @@ class GitHubActionsReviewer {
                               file.endsWith('.test.js') ||
                               file.endsWith('.spec.js');
           
-          return matchesPath && !shouldIgnore;
+          // Check if file matches the specified language
+          const matchesLanguage = this.matchesLanguage(file);
+          
+          return matchesPath && !shouldIgnore && matchesLanguage;
         });
       
-      core.info(`Found ${allFiles.length} total changed files`);
+      core.info(`Found ${allFiles.length} changed files matching language: ${this.language}`);
       
       return allFiles;
     } catch (error) {
       core.error(`❌ Error getting changed files: ${error.message}`);
       return [];
     }
+  }
+
+  /**
+   * Check if file matches the specified language
+   */
+  matchesLanguage(filePath) {
+    const languageConfig = CONFIG.LANGUAGE_CONFIGS[this.language];
+    if (!languageConfig) {
+      core.warning(`⚠️  Unknown language: ${this.language}, defaulting to all files`);
+      return true; // Default to include all files if language not recognized
+    }
+    
+    return languageConfig.extensions.some(ext => filePath.endsWith(ext));
   }
 
   /**
@@ -1042,6 +1367,7 @@ ${shouldBlockMerge
     core.info(`  - Head Ref: ${this.context.sha}`);
     core.info(`  - Review Date: ${new Date().toLocaleString()}`);
     core.info(`  - Reviewer: ${this.provider.toUpperCase()} LLM`);
+    core.info(`  - Language: ${this.language} (${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || 'Unknown'})`);
     core.info(`  - Path to Files: ${this.pathToFiles.join(', ')}`);
     core.info(`  - PR Number: ${(this.context.issue && this.context.issue.number) || 'Not available'}`);
     core.info(`  - Chunk Size: ${Math.round(this.chunkSize / 1024)}KB (${this.chunkSize} bytes)`);
@@ -1198,9 +1524,13 @@ ${shouldBlockMerge
 
     // LLM Review
     core.info(`🤖 Running LLM Review of branch changes...\n`);
+    
+    // Get language-specific review prompt
+    const reviewPrompt = getReviewPrompt(this.language);
+    core.info(`📝 Using ${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || this.language} review prompt`);
       
     const fullDiff = this.getFullDiff();
-    const llmResponse = await this.callLLM(REVIEW_PROMPT, fullDiff);
+    const llmResponse = await this.callLLM(reviewPrompt, fullDiff);
     
     if (this.logLLMResponse(llmResponse)) {
       // Check if LLM recommends blocking the merge

@@ -11,6 +11,10 @@ inputs:
     description: 'Comma-separated paths to files to review (e.g., packages/, src/, components/)'
     required: false
     default: 'packages/'
+  language:
+    description: 'Programming language for code review (js, python, java, php)'
+    required: false
+    default: 'js'
   base_branch:
     description: 'Base branch to compare against (auto-detected from PR if not specified)'
     required: false
