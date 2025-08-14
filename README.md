@@ -271,7 +271,7 @@ path_to_files: 'src/'
 path_to_files: 'packages/,src/,components/'
 
 # Language-specific paths
-path_to_files: 'src/main/java/'  # for Java
+path_to_files: 'src/,main/,java/'  # for Java
 path_to_files: 'backend/,api/'   # for Python
 path_to_files: 'app/,resources/' # for PHP
 ```
