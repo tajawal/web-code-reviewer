@@ -705,62 +705,11 @@ This chunk was too large to process completely. Here's a summary of what was det
     }
     
     // Extract and categorize information from each response
-    const summaries = [];
-    const criticalIssues = [];
-    const suggestions = [];
-    const performanceIssues = [];
-    const securityIssues = [];
-    const maintainabilityIssues = [];
-    const bestPracticeIssues = [];
-    let mergeDecision = null;
-    let confidenceScore = 0;
+    let combinedResponse = '';
     
-    responses.forEach((response, index) => {
-      const lowerResponse = response.toLowerCase();
-      
-      // Extract summary with chunk context
-      summaries.push(`**Chunk ${index + 1}/${totalChunks}:**\n${response}\n`);
-      
-      // Categorize issues by type
-      this.categorizeIssues(lowerResponse, index + 1, {
-        criticalIssues,
-        performanceIssues,
-        securityIssues,
-        maintainabilityIssues,
-        bestPracticeIssues
-      });
-      
-      // Look for merge decisions with confidence scoring
-      const decision = this.extractMergeDecision(lowerResponse);
-      if (decision) {
-        if (!mergeDecision) {
-          mergeDecision = decision;
-          confidenceScore = this.calculateConfidenceScore(lowerResponse);
-        } else if (decision !== mergeDecision) {
-          // Conflicting decisions - lower confidence
-          confidenceScore = Math.min(confidenceScore, 0.5);
-        }
-      }
+    responses.forEach((response) => {
+      combinedResponse += response
     });
-    
-    // Create intelligent combined response
-    let combinedResponse = this.createCombinedResponseHeader(responses.length, totalChunks);
-    
-    // Add decision with confidence
-    combinedResponse += this.createDecisionSection(mergeDecision, confidenceScore);
-    
-    // Add categorized issues
-    // combinedResponse += this.createIssuesSummary({
-    //   criticalIssues,
-    //   performanceIssues,
-    //   securityIssues,
-    //   maintainabilityIssues,
-    //   bestPracticeIssues
-    // });
-    
-    // Add detailed reviews
-    combinedResponse += `### 📋 **Detailed Reviews by Chunk:**\n\n`;
-    combinedResponse += summaries.join('\n---\n\n');
     
     return combinedResponse;
   }
@@ -1011,13 +960,10 @@ This chunk was too large to process completely. Here's a summary of what was det
           if (criticalIssues.length > 0) {
             issueDetails += `### 🚨 **Critical Issues (${criticalIssues.length})**\n`;
             criticalIssues.forEach(issue => {
-              issueDetails += `** 🔴 ${issue.originalId}** - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
+              issueDetails += `🔴 ${issue.originalId} - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
               issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
               issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
-              if (issue.risk_factors) {
-                issueDetails += `- **Risk Factors**: Impact: ${issue.risk_factors.impact}, Exploitability: ${issue.risk_factors.exploitability}, Likelihood: ${issue.risk_factors.likelihood}, Blast Radius: ${issue.risk_factors.blast_radius}, Evidence: ${issue.risk_factors.evidence_strength}\n`;
-              }
               issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
               if (issue.fix) {
                 issueDetails += `- **Fix**: ${issue.fix}\n`;
@@ -1032,13 +978,10 @@ This chunk was too large to process completely. Here's a summary of what was det
           if (suggestions.length > 0) {
             issueDetails += `### 💡 **Suggestions (${suggestions.length})**\n`;
             suggestions.forEach(issue => {
-              issueDetails += `** 🟡 ${issue.originalId}** - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
+              issueDetails += `🟡 ${issue.originalId} - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
               issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
               issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
-              if (issue.risk_factors) {
-                issueDetails += `- **Risk Factors**: Impact: ${issue.risk_factors.impact}, Exploitability: ${issue.risk_factors.exploitability}, Likelihood: ${issue.risk_factors.likelihood}, Blast Radius: ${issue.risk_factors.blast_radius}, Evidence: ${issue.risk_factors.evidence_strength}\n`;
-              }
               issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
               if (issue.fix) {
                 issueDetails += `- **Fix**: ${issue.fix}\n`;
@@ -1059,7 +1002,7 @@ This chunk was too large to process completely. Here's a summary of what was det
       core.warning(`⚠️  Error parsing JSON for enhanced comment: ${error.message}`);
     }
 
-    return `## 🤖 LLM Code Review
+    return `## 🤖 DeepReview
 
 **Overall Assessment**: ${status} - ${statusDescription}
 
@@ -1076,10 +1019,6 @@ ${reviewSummary}
 ---
 
 ${issueDetails}
-
-## 📋 **Complete LLM Review**
-
-${llmResponse}
 
 ---
 
@@ -1245,177 +1184,6 @@ ${shouldBlockMerge
     } else {
       core.info('✅ MERGE APPROVED: No critical issues found. Safe to merge.');
     }
-  }
-
-  /**
-   * Categorize issues by type from response text
-   */
-  categorizeIssues(responseText, chunkIndex, categories) {
-    // Critical issues
-    for (const issue of CONFIG.CRITICAL_ISSUES) {
-      if (responseText.includes(issue)) {
-        categories.criticalIssues.push(`- ${issue} (chunk ${chunkIndex})`);
-      }
-    }
-    
-    // Performance issues
-    const performanceKeywords = ['performance', 'slow', 'inefficient', 'memory leak', 're-render', 'optimization'];
-    for (const keyword of performanceKeywords) {
-      if (responseText.includes(keyword)) {
-        categories.performanceIssues.push(`- Performance concern: ${keyword} (chunk ${chunkIndex})`);
-      }
-    }
-    
-    // Security issues
-    const securityKeywords = ['security', 'vulnerability', 'xss', 'csrf', 'injection', 'authentication', 'authorization'];
-    for (const keyword of securityKeywords) {
-      if (responseText.includes(keyword)) {
-        categories.securityIssues.push(`- Security concern: ${keyword} (chunk ${chunkIndex})`);
-      }
-    }
-    
-    // Maintainability issues
-    const maintainabilityKeywords = ['maintainability', 'complexity', 'readability', 'refactor', 'clean code'];
-    for (const keyword of maintainabilityKeywords) {
-      if (responseText.includes(keyword)) {
-        categories.maintainabilityIssues.push(`- Maintainability concern: ${keyword} (chunk ${chunkIndex})`);
-      }
-    }
-    
-    // Best practices issues
-    const bestPracticeKeywords = ['best practice', 'anti-pattern', 'code smell', 'standard', 'convention'];
-    for (const keyword of bestPracticeKeywords) {
-      if (responseText.includes(keyword)) {
-        categories.bestPracticeIssues.push(`- Best practice concern: ${keyword} (chunk ${chunkIndex})`);
-      }
-    }
-  }
-
-  /**
-   * Extract merge decision from response text
-   */
-  extractMergeDecision(responseText) {
-    // Check for blocking phrases first
-    for (const phrase of CONFIG.BLOCKING_PHRASES) {
-      if (responseText.includes(phrase)) {
-        return 'BLOCK';
-      }
-    }
-    
-    // Check for approval phrases
-    for (const phrase of CONFIG.APPROVAL_PHRASES) {
-      if (responseText.includes(phrase)) {
-        return 'APPROVE';
-      }
-    }
-    
-    return null;
-  }
-
-  /**
-   * Calculate confidence score for merge decision
-   */
-  calculateConfidenceScore(responseText) {
-    let score = 0.5; // Base score
-    
-    // Higher confidence for explicit decisions
-    if (responseText.includes('safe to merge') || responseText.includes('do not merge')) {
-      score += 0.3;
-    }
-    
-    // Higher confidence for detailed reasoning
-    if (responseText.includes('because') || responseText.includes('reason')) {
-      score += 0.2;
-    }
-    
-    // Lower confidence for uncertain language
-    if (responseText.includes('maybe') || responseText.includes('possibly') || responseText.includes('consider')) {
-      score -= 0.2;
-    }
-    
-    return Math.max(0.1, Math.min(1.0, score));
-  }
-
-  /**
-   * Create combined response header
-   */
-  createCombinedResponseHeader(processedChunks, totalChunks) {
-    let header = `\n\n*This review was generated from ${processedChunks}/${totalChunks} chunks of the diff*\n\n`;
-    
-    
-    if (processedChunks < totalChunks) {
-      header += `⚠️ **Note**: ${totalChunks - processedChunks} chunks failed to process and were excluded from this review.\n\n`;
-    }
-    
-    return header;
-  }
-
-  /**
-   * Create decision section with confidence
-   */
-  createDecisionSection(decision, confidence) {
-    let section = '';
-    
-    if (decision === 'BLOCK') {
-      section += `### ❌ **OVERALL DECISION: DO NOT MERGE**\n\n`;
-      if (confidence < 0.7) {
-        section += `*Confidence: ${Math.round(confidence * 100)}% - Manual review strongly recommended*\n\n`;
-      }
-    } else if (decision === 'APPROVE') {
-      section += `### ✅ **OVERALL DECISION: SAFE TO MERGE**\n\n`;
-      if (confidence < 0.8) {
-        section += `*Confidence: ${Math.round(confidence * 100)}% - Consider additional review*\n\n`;
-      }
-    } else {
-      section += `### ⚠️ **OVERALL DECISION: MANUAL REVIEW RECOMMENDED**\n\n`;
-      section += `*No clear decision from automated review - human review required*\n\n`;
-    }
-    
-    return section;
-  }
-
-  /**
-   * Create issues summary section
-   */
-  createIssuesSummary(issues) {
-    let summary = '';
-    
-    // Critical issues (always shown first)
-    if (issues.criticalIssues.length > 0) {
-      summary += `### 🚨 **Critical Issues Found:**\n`;
-      summary += [...new Set(issues.criticalIssues)].join('\n');
-      summary += `\n\n`;
-    }
-    
-    // Security issues
-    if (issues.securityIssues.length > 0) {
-      summary += `### 🔒 **Security Concerns:**\n`;
-      summary += [...new Set(issues.securityIssues)].join('\n');
-      summary += `\n\n`;
-    }
-    
-    // Performance issues
-    if (issues.performanceIssues.length > 0) {
-      summary += `### ⚡ **Performance Concerns:**\n`;
-      summary += [...new Set(issues.performanceIssues)].join('\n');
-      summary += `\n\n`;
-    }
-    
-    // Maintainability issues
-    if (issues.maintainabilityIssues.length > 0) {
-      summary += `### 🛠️ **Maintainability Concerns:**\n`;
-      summary += [...new Set(issues.maintainabilityIssues)].join('\n');
-      summary += `\n\n`;
-    }
-    
-    // Best practices issues
-    if (issues.bestPracticeIssues.length > 0) {
-      summary += `### 📚 **Best Practice Concerns:**\n`;
-      summary += [...new Set(issues.bestPracticeIssues)].join('\n');
-      summary += `\n\n`;
-    }
-    
-    return summary;
   }
 
   /**
