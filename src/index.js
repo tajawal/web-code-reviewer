@@ -157,7 +157,11 @@ Return THIS JSON object followed by a brief human-readable summary:
 \`\`\`
 
 Then add a short human summary:
-- Summary of key issues by category (bullets, ≤6 lines)
+- Summary of key issues by category (bullets, ≤6 lines):
+  • 🔒 Security issues
+  • ⚡ Performance issues  
+  • 🛠️ Maintainability issues
+  • 📚 Best Practices issues
 
 Frontend-specific checks (only if visible in diff)
 - React: unstable hook deps; heavy work in render; missing cleanup in useEffect; dangerouslySetInnerHTML; index-as-key on dynamic lists; consider Suspense/lazy for large modules.
@@ -1007,7 +1011,7 @@ This chunk was too large to process completely. Here's a summary of what was det
           if (criticalIssues.length > 0) {
             issueDetails += `### 🚨 **Critical Issues (${criticalIssues.length})**\n`;
             criticalIssues.forEach(issue => {
-              issueDetails += `**${issue.originalId}** - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
+              issueDetails += `** 🔴 ${issue.originalId}** - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
               issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
               issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
@@ -1028,7 +1032,7 @@ This chunk was too large to process completely. Here's a summary of what was det
           if (suggestions.length > 0) {
             issueDetails += `### 💡 **Suggestions (${suggestions.length})**\n`;
             suggestions.forEach(issue => {
-              issueDetails += `**${issue.originalId}** - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
+              issueDetails += `** 🟡 ${issue.originalId}** - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
               issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
               issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
