@@ -84,39 +84,69 @@ const LLM_PROVIDERS = {
 /**
  * Review prompt template
  */
-const REVIEW_PROMPT = `You are a senior frontend engineer with 10+ years of experience in code reviews for enterprise-level applications.
-Your task is to analyze the following code changes and provide a detailed, multi-dimensional review across the following four categories:
+const REVIEW_PROMPT = `Role & Goal
+You are a senior frontend engineer (10+ years) reviewing only the provided diff/files for enterprise web apps. Produce a single summary comment (no inline clutter) that highlights critical, hard-to-spot issues across Performance, Security, Maintainability, and Best Practices.
 
-Review Dimensions:
-1. Performance:
-   - Will this change degrade or improve runtime or render performance?
-   - Are there any unnecessary re-renders, memory-heavy operations, or inefficient loops?
-   - Is lazy loading, caching, memoization, or virtualization being missed where needed?
+Scope & Exclusions (very important)
+- Focus on critical risks: exploitable security flaws, meaningful performance regressions, memory leaks, unsafe patterns, architectural violations.
+- Ignore style/formatting/naming/import order/semicolons/lint/prettier concerns, and any non-material preferences.
+- Do not assume code that is not shown. If essential context is missing, do NOT invent details: lower confidence and/or treat the point as a Suggestion.
 
-2. Security:
-   - Are there any injection vulnerabilities (XSS, CSRF)?
-   - Is untrusted user input handled securely?
-   - Are sensitive data and access controls managed properly?
+Severity Rubric
+- 🔴 Critical (Blocker) = any of:
+  • Security: XSS/unsafe HTML sinks, injection, CSRF on state-changing calls without protection, secret/PII exposure, insecure token storage.
+  • Performance: O(n²)+ hot paths, render thrash, heavy sync work in render, large lists without virtualization, event/timer/listener leaks, expensive deps in React hooks.
+  • Maintainability: unbounded complexity/duplicated core logic causing correctness risk, tight coupling breaking architecture, unhandled error paths that can crash user flows.
+  • Best Practices: patterns known to cause data loss, races, or reliability issues (e.g., array index as React key on dynamic lists; fetches without abort/timeout/retry in critical flows).
+- 🟡 Suggestion (Non-blocking) = clear-value improvements that are not safety/correctness critical.
 
-3. Maintainability:
-   - Is the code clean, modular, and well-structured?
-   - Are abstraction levels, and logic separation appropriate?
-   - Will another engineer be able to understand and modify it without confusion?
+Evidence Requirements (for EACH issue)
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence impact), fix (concise, code if helpful), tests (brief test idea), confidence ∈ [0,1].
+- Deduplicate repeated patterns by reporting one issue with an "occurrences" array of {file, lines}.
 
-4. Best Practices:
-   - Are modern frontend standards and patterns (e.g., React hooks, component splitting, TypeScript safety, accessibility) followed?
-   - Are there code smells, anti-patterns, or obsolete techniques used?
+Uncertain Context Policy (no questions)
+- If a conclusion depends on unknowns (e.g., behavior of a sanitize utility), do not speculate. Prefer a Suggestion with lower confidence rather than a Critical claim.
 
-Feedback Guidelines:
-- Highlight only critical issues (e.g., security flaws, memory leaks, unsafe patterns, architectural violations) as blockers.
-- All other observations should be flagged as non-blocking suggestions.
-- Provide code examples where possible.
-- Be constructive and educational. Avoid vague comments.
+Final Policy
+- final_recommendation = "do_not_merge" if any 🔴 issue has confidence ≥ 0.6; otherwise "safe_to_merge".
 
-Final Output Format:
-- Summary of key issues grouped by category
-- Each issue should be marked: 🔴 Critical (Blocker) or 🟡 Suggestion (Non-blocking)
-- Final Recommendation: ✅ Safe to merge or ❌ Do NOT merge
+Output Format (JSON first, then a short human summary)
+Return THIS JSON object followed by a brief human-readable summary:
+
+\`\`\`json
+{
+  "summary": "1–3 sentences overall assessment.",
+  "issues": [
+    {
+      "id": "SEC-01",
+      "category": "security|performance|maintainability|best_practices",
+      "severity": "critical|suggestion",
+      "confidence": 0.0,
+      "file": "src/components/Table.tsx",
+      "lines": [120, 134],
+      "snippet": "<10-line minimal excerpt>",
+      "why_it_matters": "Concrete impact in 1 sentence.",
+      "fix": "Specific steps or code patch.",
+      "tests": "Brief test to prevent regression.",
+      "occurrences": [
+        {"file": "src/pages/List.tsx", "lines": [88, 95]}
+      ]
+    }
+  ],
+  "metrics": { "critical_count": 0, "suggestion_count": 0 },
+  "final_recommendation": "safe_to_merge|do_not_merge"
+}
+\`\`\`
+
+Then add a short human summary:
+- Summary of key issues by category (bullets, ≤6 lines total)
+- Final Recommendation: ✅ Safe to merge / ❌ Do NOT merge
+
+Frontend-specific checks (only if visible in diff)
+- React: unstable hook deps; heavy work in render; missing cleanup in useEffect; dangerouslySetInnerHTML; index-as-key on dynamic lists; consider Suspense/lazy for large modules.
+- TypeScript: any/unknown leakage at boundaries; unsafe narrowing; non-null assertions (!) masking nullability.
+- Fetch/IO: missing abort/timeout; lack of retry/backoff for critical calls; leaking subscriptions/websockets.
+- Accessibility: interactive elements without keyboard/focus handling (mark Critical only if it blocks core flows).
 
 Context: Here are the code changes (diff or full files):`;
 
@@ -715,9 +745,79 @@ This chunk was too large to process completely. Here's a summary of what was det
   }
 
   /**
-   * Check if LLM response indicates merge should be blocked
+   * Check if LLM response indicates merge should be blocked based on JSON analysis
    */
   checkMergeDecision(llmResponse) {
+    try {
+      // Try to extract JSON from the response
+      const jsonMatch = llmResponse.match(/```json\s*([\s\S]*?)\s*```/);
+      
+      if (jsonMatch) {
+        const jsonStr = jsonMatch[1];
+        const reviewData = JSON.parse(jsonStr);
+        
+        core.info(`📊 Parsed JSON review data: ${reviewData.issues?.length || 0} issues found`);
+        
+        // Check final recommendation from LLM
+        if (reviewData.final_recommendation) {
+          const shouldBlock = reviewData.final_recommendation === 'do_not_merge';
+          core.info(`🤖 LLM final recommendation: ${reviewData.final_recommendation} (${shouldBlock ? 'BLOCK' : 'APPROVE'})`);
+          return shouldBlock;
+        }
+        
+        // Analyze issues based on severity and confidence
+        if (reviewData.issues && Array.isArray(reviewData.issues)) {
+          const criticalIssues = reviewData.issues.filter(issue => 
+            issue.severity === 'critical' && issue.confidence >= 0.6
+          );
+          
+          const highConfidenceCritical = criticalIssues.length;
+          
+          if (highConfidenceCritical > 0) {
+            core.info(`🚨 Found ${highConfidenceCritical} critical issues with confidence ≥ 0.6`);
+            core.info(`   Issues: ${criticalIssues.map(i => `${i.id} (${i.category})`).join(', ')}`);
+            return true; // Block merge
+          }
+          
+          // Log all issues for transparency
+          const allIssues = reviewData.issues.map(issue => 
+            `${issue.severity.toUpperCase()} ${issue.id}: ${issue.category} (confidence: ${issue.confidence})`
+          );
+          
+          if (allIssues.length > 0) {
+            core.info(`📋 All issues found: ${allIssues.join(', ')}`);
+          }
+        }
+        
+        // Check metrics if available
+        if (reviewData.metrics) {
+          core.info(`📊 Review metrics: ${reviewData.metrics.critical_count || 0} critical, ${reviewData.metrics.suggestion_count || 0} suggestions`);
+          
+          if (reviewData.metrics.critical_count > 0) {
+            core.info(`🚨 Critical issues count: ${reviewData.metrics.critical_count}`);
+            return true; // Block merge if any critical issues
+          }
+        }
+        
+        core.info('✅ No critical issues found - safe to merge');
+        return false;
+      }
+      
+      // Fallback to old text-based parsing if JSON not found
+      core.warning('⚠️  JSON not found in response, falling back to text-based parsing');
+      return this.checkMergeDecisionLegacy(llmResponse);
+      
+    } catch (error) {
+      core.warning(`⚠️  Error parsing JSON response: ${error.message}`);
+      core.warning('⚠️  Falling back to text-based parsing');
+      return this.checkMergeDecisionLegacy(llmResponse);
+    }
+  }
+
+  /**
+   * Legacy text-based merge decision checking (fallback)
+   */
+  checkMergeDecisionLegacy(llmResponse) {
     const response = llmResponse.toLowerCase();
 
     // Check for explicit approval phrases
@@ -777,7 +877,7 @@ This chunk was too large to process completely. Here's a summary of what was det
   }
 
   /**
-   * Generate PR comment content
+   * Generate PR comment content with enhanced JSON parsing
    */
   generatePRComment(shouldBlockMerge, changedFiles, llmResponse) {
     const status = shouldBlockMerge ? '❌ **DO NOT MERGE**' : '✅ **SAFE TO MERGE**';
@@ -785,9 +885,76 @@ This chunk was too large to process completely. Here's a summary of what was det
       ? 'Issues found that must be addressed before merging' 
       : 'All changes are safe and well-implemented';
 
+    // Try to extract and parse JSON for enhanced display
+    let reviewSummary = '';
+    let issueDetails = '';
+    
+    try {
+      const jsonMatch = llmResponse.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        const reviewData = JSON.parse(jsonMatch[1]);
+        
+        // Create enhanced summary from JSON data
+        if (reviewData.summary) {
+          reviewSummary = `**AI Summary**: ${reviewData.summary}\n\n`;
+        }
+        
+        // Create structured issue display
+        if (reviewData.issues && reviewData.issues.length > 0) {
+          const criticalIssues = reviewData.issues.filter(i => i.severity === 'critical');
+          const suggestions = reviewData.issues.filter(i => i.severity === 'suggestion');
+          
+          issueDetails = `## 🔍 **Issues Found**\n\n`;
+          
+          if (criticalIssues.length > 0) {
+            issueDetails += `### 🚨 **Critical Issues (${criticalIssues.length})**\n`;
+            criticalIssues.forEach(issue => {
+              issueDetails += `**${issue.id}** - ${issue.category.toUpperCase()}\n`;
+              issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
+              issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
+              issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
+              if (issue.fix) {
+                issueDetails += `- **Fix**: ${issue.fix}\n`;
+              }
+              if (issue.tests) {
+                issueDetails += `- **Test**: ${issue.tests}\n`;
+              }
+              issueDetails += `\n`;
+            });
+          }
+          
+          if (suggestions.length > 0) {
+            issueDetails += `### 💡 **Suggestions (${suggestions.length})**\n`;
+            suggestions.forEach(issue => {
+              issueDetails += `**${issue.id}** - ${issue.category.toUpperCase()}\n`;
+              issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
+              issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
+              issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
+              if (issue.fix) {
+                issueDetails += `- **Fix**: ${issue.fix}\n`;
+              }
+              issueDetails += `\n`;
+            });
+          }
+          
+          // Add metrics if available
+          if (reviewData.metrics) {
+            issueDetails += `### 📊 **Review Metrics**\n`;
+            issueDetails += `- **Critical Issues**: ${reviewData.metrics.critical_count || 0}\n`;
+            issueDetails += `- **Suggestions**: ${reviewData.metrics.suggestion_count || 0}\n`;
+            issueDetails += `- **Total Issues**: ${reviewData.issues.length}\n\n`;
+          }
+        }
+      }
+    } catch (error) {
+      core.warning(`⚠️  Error parsing JSON for enhanced comment: ${error.message}`);
+    }
+
     return `## 🤖 LLM Code Review
 
 **Overall Assessment**: ${status} - ${statusDescription}
+
+${reviewSummary}
 
 **Review Details:**
 - **Provider**: ${this.provider.toUpperCase()}
@@ -802,6 +969,8 @@ ${changedFiles.map(file => `- \`${file}\``).join('\n')}
 
 ---
 
+${issueDetails}
+
 ## 📋 **Complete LLM Review**
 
 ${llmResponse}
@@ -810,8 +979,8 @@ ${llmResponse}
 
 **What to do next:**
 ${shouldBlockMerge 
-  ? '1. 🔍 Review the detailed analysis above\n2. 🛠️ Fix the issues mentioned in the review\n3. 🔄 Push changes and re-run the review\n4. ✅ Merge only after all issues are resolved'
-  : '1. ✅ Review the detailed analysis above\n2. 🚀 Safe to merge when ready\n3. 💡 Consider any optimization suggestions as future improvements'
+  ? '1. 🔍 Review the critical issues above\n2. 🛠️ Fix the issues mentioned in the review\n3. 🔄 Push changes and re-run the review\n4. ✅ Merge only after all critical issues are resolved'
+  : '1. ✅ Review the suggestions above\n2. 🚀 Safe to merge when ready\n3. 💡 Consider any optimization suggestions as future improvements'
 }
 
 ---
@@ -877,9 +1046,58 @@ ${shouldBlockMerge
   }
 
   /**
-   * Log final decision
+   * Log final decision with enhanced details
    */
-  logFinalDecision(shouldBlockMerge) {
+  logFinalDecision(shouldBlockMerge, llmResponse) {
+    try {
+      // Try to extract JSON for detailed logging
+      const jsonMatch = llmResponse.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        const reviewData = JSON.parse(jsonMatch[1]);
+        
+        if (shouldBlockMerge) {
+          const criticalIssues = reviewData.issues?.filter(i => i.severity === 'critical') || [];
+          const highConfidenceCritical = criticalIssues.filter(i => i.confidence >= 0.6);
+          
+          core.setFailed(`🚨 MERGE BLOCKED: LLM review found ${criticalIssues.length} critical issues (${highConfidenceCritical.length} with high confidence ≥ 0.6)`);
+          
+          if (highConfidenceCritical.length > 0) {
+            core.info('   High-confidence critical issues:');
+            highConfidenceCritical.forEach(issue => {
+              core.info(`   - ${issue.id}: ${issue.category} (${Math.round(issue.confidence * 100)}% confidence)`);
+              core.info(`     File: ${issue.file}, Lines: ${issue.lines.join('-')}`);
+              core.info(`     Impact: ${issue.why_it_matters}`);
+            });
+          }
+          
+          core.info('   Please fix the critical issues mentioned above and run the review again.');
+        } else {
+          const suggestions = reviewData.issues?.filter(i => i.severity === 'suggestion') || [];
+          core.info(`✅ MERGE APPROVED: No critical issues found. ${suggestions.length} suggestions available for consideration.`);
+          
+          if (suggestions.length > 0) {
+            core.info('   Suggestions for improvement:');
+            suggestions.slice(0, 3).forEach(issue => { // Show first 3 suggestions
+              core.info(`   - ${issue.id}: ${issue.category} (${Math.round(issue.confidence * 100)}% confidence)`);
+            });
+            if (suggestions.length > 3) {
+              core.info(`   ... and ${suggestions.length - 3} more suggestions`);
+            }
+          }
+        }
+        
+        // Log metrics if available
+        if (reviewData.metrics) {
+          core.info(`📊 Review Summary: ${reviewData.metrics.critical_count || 0} critical, ${reviewData.metrics.suggestion_count || 0} suggestions`);
+        }
+        
+        return;
+      }
+    } catch (error) {
+      core.warning(`⚠️  Error parsing JSON for detailed logging: ${error.message}`);
+    }
+    
+    // Fallback to simple logging
     if (shouldBlockMerge) {
       core.setFailed('🚨 MERGE BLOCKED: LLM review found critical issues that must be addressed before merging.');
       core.info('   Please fix the issues mentioned above and run the review again.');
@@ -1085,7 +1303,7 @@ ${shouldBlockMerge
       const prComment = this.generatePRComment(shouldBlockMerge, changedFiles, llmResponse);
       await this.addPRComment(prComment);
       
-      this.logFinalDecision(shouldBlockMerge);
+      this.logFinalDecision(shouldBlockMerge, llmResponse);
     }
   }
 }
