@@ -32158,7 +32158,6 @@ Return THIS JSON object followed by a brief human-readable summary:
 
 Then add a short human summary:
 - Summary of key issues by category (bullets, ≤6 lines)
-- Final Recommendation: ✅ Safe to merge / ❌ Do NOT merge
 
 Frontend-specific checks (only if visible in diff)
 - React: unstable hook deps; heavy work in render; missing cleanup in useEffect; dangerouslySetInnerHTML; index-as-key on dynamic lists; consider Suspense/lazy for large modules.
