@@ -826,20 +826,20 @@ This chunk was too large to process completely. Here's a summary of what was det
         // Analyze all issues based on severity and confidence
         if (allIssues.length > 0) {
           const criticalIssues = allIssues.filter(issue => 
-            issue.severity === 'critical' && issue.confidence >= 0.6
+            issue.severity_proposed === 'critical' && issue.confidence >= 0.6
           );
           
           const highConfidenceCritical = criticalIssues.length;
           
           if (highConfidenceCritical > 0) {
             core.info(`🚨 Found ${highConfidenceCritical} critical issues with confidence ≥ 0.6 across all chunks`);
-            core.info(`   Issues: ${criticalIssues.map(i => `${i.originalId} (${i.category}, Chunk ${i.chunk})`).join(', ')}`);
+            core.info(`   Issues: ${criticalIssues.map(i => `${i.originalId} (${i.category}, Chunk ${i.chunk}, score: ${i.severity_score?.toFixed(1) || 'N/A'})`).join(', ')}`);
             return true; // Block merge
           }
           
-          // Log all issues for transparency
+          // Log all issues for transparency with severity scores
           const allIssuesSummary = allIssues.map(issue => 
-            `${issue.severity.toUpperCase()} ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, confidence: ${issue.confidence})`
+            `${issue.severity_proposed.toUpperCase()} ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, score: ${issue.severity_score?.toFixed(1) || 'N/A'}, confidence: ${issue.confidence})`
           );
           
           if (allIssuesSummary.length > 0) {
@@ -999,8 +999,8 @@ This chunk was too large to process completely. Here's a summary of what was det
         
         // Create structured issue display from combined data
         if (allIssues.length > 0) {
-          const criticalIssues = allIssues.filter(i => i.severity === 'critical');
-          const suggestions = allIssues.filter(i => i.severity === 'suggestion');
+          const criticalIssues = allIssues.filter(i => i.severity_proposed === 'critical');
+          const suggestions = allIssues.filter(i => i.severity_proposed === 'suggestion');
           
           issueDetails = `## 🔍 **Issues Found**\n\n`;
           
@@ -1009,7 +1009,11 @@ This chunk was too large to process completely. Here's a summary of what was det
             criticalIssues.forEach(issue => {
               issueDetails += `**${issue.originalId}** - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
+              issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
               issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
+              if (issue.risk_factors) {
+                issueDetails += `- **Risk Factors**: Impact: ${issue.risk_factors.impact}, Exploitability: ${issue.risk_factors.exploitability}, Likelihood: ${issue.risk_factors.likelihood}, Blast Radius: ${issue.risk_factors.blast_radius}, Evidence: ${issue.risk_factors.evidence_strength}\n`;
+              }
               issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
               if (issue.fix) {
                 issueDetails += `- **Fix**: ${issue.fix}\n`;
@@ -1026,7 +1030,11 @@ This chunk was too large to process completely. Here's a summary of what was det
             suggestions.forEach(issue => {
               issueDetails += `**${issue.originalId}** - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
+              issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
               issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
+              if (issue.risk_factors) {
+                issueDetails += `- **Risk Factors**: Impact: ${issue.risk_factors.impact}, Exploitability: ${issue.risk_factors.exploitability}, Likelihood: ${issue.risk_factors.likelihood}, Blast Radius: ${issue.risk_factors.blast_radius}, Evidence: ${issue.risk_factors.evidence_strength}\n`;
+              }
               issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
               if (issue.fix) {
                 issueDetails += `- **Fix**: ${issue.fix}\n`;
@@ -1184,7 +1192,7 @@ ${shouldBlockMerge
         });
         
         if (shouldBlockMerge) {
-          const criticalIssues = allIssues.filter(i => i.severity === 'critical');
+          const criticalIssues = allIssues.filter(i => i.severity_proposed === 'critical');
           const highConfidenceCritical = criticalIssues.filter(i => i.confidence >= 0.6);
           
           core.setFailed(`🚨 MERGE BLOCKED: LLM review found ${criticalIssues.length} critical issues (${highConfidenceCritical.length} with high confidence ≥ 0.6) across ${jsonMatches.length} chunks`);
@@ -1192,21 +1200,24 @@ ${shouldBlockMerge
           if (highConfidenceCritical.length > 0) {
             core.info('   High-confidence critical issues:');
             highConfidenceCritical.forEach(issue => {
-              core.info(`   - ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, ${Math.round(issue.confidence * 100)}% confidence)`);
+              core.info(`   - ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, score: ${issue.severity_score?.toFixed(1) || 'N/A'}, ${Math.round(issue.confidence * 100)}% confidence)`);
               core.info(`     File: ${issue.file}, Lines: ${issue.lines.join('-')}`);
+              if (issue.risk_factors) {
+                core.info(`     Risk Factors: I:${issue.risk_factors.impact} E:${issue.risk_factors.exploitability} L:${issue.risk_factors.likelihood} B:${issue.risk_factors.blast_radius} Ev:${issue.risk_factors.evidence_strength}`);
+              }
               core.info(`     Impact: ${issue.why_it_matters}`);
             });
           }
           
           core.info('   Please fix the critical issues mentioned above and run the review again.');
         } else {
-          const suggestions = allIssues.filter(i => i.severity === 'suggestion');
+          const suggestions = allIssues.filter(i => i.severity_proposed === 'suggestion');
           core.info(`✅ MERGE APPROVED: No critical issues found across ${jsonMatches.length} chunks. ${suggestions.length} suggestions available for consideration.`);
           
           if (suggestions.length > 0) {
             core.info('   Suggestions for improvement:');
             suggestions.slice(0, 3).forEach(issue => { // Show first 3 suggestions
-              core.info(`   - ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, ${Math.round(issue.confidence * 100)}% confidence)`);
+              core.info(`   - ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, score: ${issue.severity_score?.toFixed(1) || 'N/A'}, ${Math.round(issue.confidence * 100)}% confidence)`);
             });
             if (suggestions.length > 3) {
               core.info(`   ... and ${suggestions.length - 3} more suggestions`);
