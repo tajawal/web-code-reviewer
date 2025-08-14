@@ -11,9 +11,10 @@ const CONFIG = {
   DEFAULT_BASE_BRANCH: 'develop',
   DEFAULT_PROVIDER: 'claude',
   DEFAULT_PATH_TO_FILES: 'packages/',
+  DEFAULT_LANGUAGE: 'js', // Default language for code review
   IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js'],
   MAX_TOKENS: 3000, // Increased for comprehensive code reviews
-  TEMPERATURE: 0.3, // Optimal for consistent analytical responses
+  TEMPERATURE: 0, // Optimal for consistent analytical responses
   // Chunking configuration
   DEFAULT_CHUNK_SIZE: 300 * 1024, // 300KB default chunk size (optimized for Claude Sonnet 4)
   MAX_CONCURRENT_REQUESTS: 1, // Reduced to 1 to avoid rate limits
@@ -32,7 +33,30 @@ const CONFIG = {
     'security vulnerability', 'security issue', 'critical bug', 
     'memory leak', 'race condition', 'xss vulnerability',
     'authentication issue', 'authorization problem'
-  ]
+  ],
+  // Language-specific file extensions and patterns
+  LANGUAGE_CONFIGS: {
+    js: {
+      extensions: ['.js', '.jsx', '.ts', '.tsx', '.mjs'],
+      patterns: ['*.js', '*.jsx', '*.ts', '*.tsx', '*.mjs'],
+      name: 'JavaScript/TypeScript'
+    },
+    python: {
+      extensions: ['.py', '.pyw', '.pyx', '.pyi'],
+      patterns: ['*.py', '*.pyw', '*.pyx', '*.pyi'],
+      name: 'Python'
+    },
+    java: {
+      extensions: ['.java'],
+      patterns: ['*.java'],
+      name: 'Java'
+    },
+    php: {
+      extensions: ['.php'],
+      patterns: ['*.php'],
+      name: 'PHP'
+    }
+  }
 };
 
 /**
@@ -82,43 +106,377 @@ const LLM_PROVIDERS = {
 };
 
 /**
- * Review prompt template
+ * Language-specific review prompts
  */
-const REVIEW_PROMPT = `You are a senior frontend engineer with 10+ years of experience in code reviews for enterprise-level applications.
-Your task is to analyze the following code changes and provide a detailed, multi-dimensional review across the following four categories:
+const LANGUAGE_PROMPTS = {
+  js: `Role & Goal
+You are a senior frontend engineer (10+ years) reviewing only the provided diff/files for enterprise web apps. Produce a single summary comment (no inline clutter) that highlights critical, hard-to-spot issues across Performance, Security, Maintainability, and Best Practices.
 
-Review Dimensions:
-1. Performance:
-   - Will this change degrade or improve runtime or render performance?
-   - Are there any unnecessary re-renders, memory-heavy operations, or inefficient loops?
-   - Is lazy loading, caching, memoization, or virtualization being missed where needed?
+Scope & Exclusions (very important)
+- Focus on critical risks: exploitable security flaws, meaningful performance regressions, memory leaks, unsafe patterns, architectural violations.
+- Ignore style/formatting/naming/import order/semicolons/lint/prettier concerns, and any non-material preferences.
+- Do not assume code that is not shown. If essential context is missing, do NOT invent details: lower confidence and/or treat the point as a Suggestion.
 
-2. Security:
-   - Are there any injection vulnerabilities (XSS, CSRF)?
-   - Is untrusted user input handled securely?
-   - Are sensitive data and access controls managed properly?
+Severity Scoring (mandatory)
+For EACH issue, assign 0–5 scores:
+- impact
+- exploitability
+- likelihood
+- blast_radius
+- evidence_strength
 
-3. Maintainability:
-   - Is the code clean, modular, and well-structured?
-   - Are abstraction levels, and logic separation appropriate?
-   - Will another engineer be able to understand and modify it without confusion?
+Compute:
+severity_score = 0.35*impact + 0.30*exploitability + 0.20*likelihood + 0.10*blast_radius + 0.05*evidence_strength
 
-4. Best Practices:
-   - Are modern frontend standards and patterns (e.g., React hooks, component splitting, TypeScript safety, accessibility) followed?
-   - Are there code smells, anti-patterns, or obsolete techniques used?
+Set "severity_proposed" using ONLY:
+- "critical" if severity_score ≥ 3.6 AND evidence_strength ≥ 3
+- otherwise "suggestion"
 
-Feedback Guidelines:
-- Highlight only critical issues (e.g., security flaws, memory leaks, unsafe patterns, architectural violations) as blockers.
-- All other observations should be flagged as non-blocking suggestions.
-- Provide code examples where possible.
-- Be constructive and educational. Avoid vague comments.
+Auto-critical overrides (regardless of score):
+- Unsanitized HTML sinks (e.g., innerHTML/dangerouslySetInnerHTML) with untrusted input
+- Secret/credential/API key embedded in client code
+- Unbounded listener/timer or render-time loop causing growth/leak
+- Direct DOM injection/navigation from untrusted input without validation/escaping
 
-Final Output Format:
-- Summary of key issues grouped by category
-- Each issue should be marked: 🔴 Critical (Blocker) or 🟡 Suggestion (Non-blocking)
-- Final Recommendation: ✅ Safe to merge or ❌ Do NOT merge
+Evidence Requirements (for EACH issue)
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
-Context: Here are the code changes (diff or full files):`;
+Final Policy
+- final_recommendation = "do_not_merge" if any issue ends up "critical" with confidence ≥ 0.6; else "safe_to_merge".
+
+Output Format (JSON first, then a short human summary)
+Return THIS JSON object followed by a brief human-readable summary:
+
+\`\`\`json
+{
+  "summary": "1–3 sentences overall assessment.",
+  "issues": [
+    {
+      "id": "SEC-01",
+      "category": "security|performance|maintainability|best_practices",
+      "severity_proposed": "critical|suggestion",
+      "severity_score": 0.0,
+      "risk_factors": {
+        "impact": 0,
+        "exploitability": 0,
+        "likelihood": 0,
+        "blast_radius": 0,
+        "evidence_strength": 0
+      },
+      "confidence": 0.0,
+      "file": "src/components/Table.tsx",
+      "lines": [120, 134],
+      "snippet": "<10-line minimal excerpt>",
+      "why_it_matters": "Concrete impact in 1 sentence.",
+      "fix": "Specific steps or code patch.",
+      "tests": "Brief test to prevent regression.",
+      "occurrences": [
+        {"file": "src/pages/List.tsx", "lines": [88, 95]}
+      ]
+    }
+  ],
+  "metrics": { "critical_count": 0, "suggestion_count": 0 },
+  "final_recommendation": "safe_to_merge|do_not_merge"
+}
+\`\`\`
+
+Then add a short human summary:
+- Summary of key issues by category (bullets, ≤6 lines):
+  • 🔒 Security issues
+  • ⚡ Performance issues  
+  • 🛠️ Maintainability issues
+  • 📚 Best Practices issues
+
+Frontend-specific checks (only if visible in diff)
+- React: unstable hook deps; heavy work in render; missing cleanup in useEffect; dangerouslySetInnerHTML; index-as-key on dynamic lists; consider Suspense/lazy for large modules.
+- TypeScript: any/unknown leakage; unsafe narrowing; non-null assertions (!).
+- Fetch/IO: missing abort/timeout; lack of retry/backoff for critical calls; leaking subscriptions/websockets.
+- Accessibility: critical only if it blocks core flows.
+
+Context: Here are the code changes (diff or full files):`,
+
+  python: `Role & Goal
+  You are a senior Python engineer (10+ years) reviewing only the provided diff/files for enterprise Python apps (APIs/services/data jobs). Produce a single summary comment (no inline clutter) that highlights critical, hard-to-spot issues across Performance, Security, Maintainability, and Best Practices.
+
+Scope & Exclusions (very important)
+- Focus on critical risks: exploitable security flaws, meaningful performance regressions, memory/resource leaks, unsafe patterns, architectural violations.
+- Ignore style/formatting/naming/import order/linters/auto-formatters, and any non-material preferences.
+- Do not assume code that is not shown. If essential context is missing, do NOT invent details: lower confidence and/or treat the point as a Suggestion.
+
+Severity Scoring (mandatory)
+For EACH issue, assign 0–5 scores:
+- impact
+- exploitability
+- likelihood
+- blast_radius
+- evidence_strength
+
+Compute:
+severity_score = 0.35*impact + 0.30*exploitability + 0.20*likelihood + 0.10*blast_radius + 0.05*evidence_strength
+
+Set "severity_proposed" using ONLY:
+- "critical" if severity_score ≥ 3.6 AND evidence_strength ≥ 3
+- otherwise "suggestion"
+
+Auto-critical overrides (regardless of score)
+- Unsafe code execution/deserialization on untrusted input (e.g., eval/exec, pickle.loads, yaml.load without SafeLoader).
+- Hard-coded secrets/credentials/API keys/private keys embedded in code or configs.
+- Unbounded loops/threads/timers or resource leaks (files/sockets/processes not closed; missing context managers) causing growth/leak.
+- Direct system/DB calls from untrusted input without validation/parameterization (e.g., subprocess(..., shell=true) or string-formatted SQL).
+
+Evidence Requirements (for EACH issue)
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
+
+Final Policy
+- final_recommendation = "do_not_merge" if any issue ends up "critical" with confidence ≥ 0.6; else "safe_to_merge".
+
+Output Format (JSON first, then a short human summary)
+Return THIS JSON object followed by a brief human-readable summary:
+
+\`\`\`json
+{
+  "summary": "1–3 sentences overall assessment.",
+  "issues": [
+    {
+      "id": "SEC-01",
+      "category": "security|performance|maintainability|best_practices",
+      "severity_proposed": "critical|suggestion",
+      "severity_score": 0.0,
+      "risk_factors": {
+        "impact": 0,
+        "exploitability": 0,
+        "likelihood": 0,
+        "blast_radius": 0,
+        "evidence_strength": 0
+      },
+      "confidence": 0.0,
+      "file": "app/services/user_service.py",
+      "lines": [120, 134],
+      "snippet": "<10-line minimal excerpt>",
+      "why_it_matters": "Concrete impact in 1 sentence.",
+      "fix": "Specific steps or code patch.",
+      "tests": "Brief test to prevent regression (e.g., pytest).",
+      "occurrences": [
+        {"file": "app/api/users.py", "lines": [88, 95]}
+      ]
+    }
+  ],
+  "metrics": { "critical_count": 0, "suggestion_count": 0 },
+  "final_recommendation": "safe_to_merge|do_not_merge"
+}
+\`\`\`
+
+Then add a short human summary:
+- Summary of key issues by category (bullets, ≤6 lines):
+  • 🔒 Security issues  
+  • ⚡ Performance issues  
+  • 🛠️ Maintainability issues  
+  • 📚 Best Practices issues
+
+Python-specific checks (only if visible in diff)
+- Web frameworks (Django/Flask/FastAPI): DEBUG=true in prod; missing CSRF where required; missing authz checks; raw/unparameterized SQL; path traversal in file ops; open redirects; overly permissive CORS.
+- I/O & Network: requests without timeouts/retries; verify=false on TLS; unbounded file/socket usage; missing context managers (with open(...)); large in-memory loads where streaming fits.
+- Concurrency & Async: blocking calls in async handlers; missing await; unjoined threads/processes; race conditions without locks; misuse of shared mutables.
+- Language & Stdlib: eval/exec; pickle/yaml.load (unsafe loader); subprocess(..., shell=true) with user input; broad except Exception swallowing errors; mutable default args; weak crypto for security (e.g., md5/sha1 for passwords, using random instead of secrets).
+
+Context: Here are the code changes (diff or full files):`,
+
+  java: `Role & Goal
+You are a senior Java engineer (10+ years) reviewing only the provided diff/files for enterprise Java apps (Spring Boot/Jakarta EE/microservices). Produce a single summary comment (no inline clutter) that highlights critical, hard-to-spot issues across Performance, Security, Maintainability, and Best Practices.
+
+Scope & Exclusions (very important)
+- Focus on critical risks: exploitable security flaws, meaningful performance regressions, memory/resource leaks, unsafe patterns, architectural violations.
+- Ignore style/formatting/naming/import order/checkstyle/spotless concerns, and any non-material preferences.
+- Do not assume code that is not shown. If essential context is missing, do NOT invent details: lower confidence and/or treat the point as a Suggestion.
+
+Severity Scoring (mandatory)
+For EACH issue, assign 0–5 scores:
+- impact
+- exploitability
+- likelihood
+- blast_radius
+- evidence_strength
+
+Compute:
+severity_score = 0.35*impact + 0.30*exploitability + 0.20*likelihood + 0.10*blast_radius + 0.05*evidence_strength
+
+Set "severity_proposed" using ONLY:
+- "critical" if severity_score ≥ 3.6 AND evidence_strength ≥ 3
+- otherwise "suggestion"
+
+Auto-critical overrides (regardless of score)
+- Unsafe deserialization / code execution on untrusted input (e.g., ObjectInputStream.readObject, Jackson default-typing enabling polymorphic deserialization, SnakeYAML load without safe config).
+- Hard-coded secrets/credentials/API keys/private keys in source or configs.
+- Command injection / shell execution using untrusted input (e.g., Runtime.getRuntime().exec, ProcessBuilder) without strict whitelisting.
+- SQL/JPQL injection via string concatenation (no prepared statements/parameter binding).
+- XXE / XML parser not hardened (no FEATURE_SECURE_PROCESSING, external entities enabled).
+- Unbounded thread pools/schedulers/timers or resource leaks (unclosed Connection/ResultSet/InputStream; missing try-with-resources) causing growth/leak.
+
+Evidence Requirements (for EACH issue)
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
+
+Final Policy
+- final_recommendation = "do_not_merge" if any issue ends up "critical" with confidence ≥ 0.6; else "safe_to_merge".
+
+Output Format (JSON first, then a short human summary)
+Return THIS JSON object followed by a brief human-readable summary:
+
+\`\`\`json
+{
+  "summary": "1–3 sentences overall assessment.",
+  "issues": [
+    {
+      "id": "SEC-01",
+      "category": "security|performance|maintainability|best_practices",
+      "severity_proposed": "critical|suggestion",
+      "severity_score": 0.0,
+      "risk_factors": {
+        "impact": 0,
+        "exploitability": 0,
+        "likelihood": 0,
+        "blast_radius": 0,
+        "evidence_strength": 0
+      },
+      "confidence": 0.0,
+      "file": "src/main/java/com/example/user/UserService.java",
+      "lines": [120, 134],
+      "snippet": "<10-line minimal excerpt>",
+      "why_it_matters": "Concrete impact in 1 sentence.",
+      "fix": "Specific steps or code patch.",
+      "tests": "Brief test to prevent regression (e.g., JUnit + MockMvc).",
+      "occurrences": [
+        {"file": "src/main/java/com/example/api/UserController.java", "lines": [88, 95]}
+      ]
+    }
+  ],
+  "metrics": { "critical_count": 0, "suggestion_count": 0 },
+  "final_recommendation": "safe_to_merge|do_not_merge"
+}
+\`\`\`
+
+Then add a short human summary:
+- Summary of key issues by category (bullets, ≤6 lines):
+  • 🔒 Security issues  
+  • ⚡ Performance issues  
+  • 🛠️ Maintainability issues  
+  • 📚 Best Practices issues
+
+Java-specific checks (only if visible in diff)
+- Web & REST (Spring/Jakarta): Missing authn/authz on endpoints; permissive CORS; user input directly into queries; unvalidated redirects; exposing stack traces in prod; @ControllerAdvice/exception handlers swallowing errors.
+- DB & ORM (JPA/Hibernate/MyBatis): N+1 queries; missing @Transactional where required; string-concatenated queries; lack of indices for hot lookups; incorrect fetch type (EAGER on large graphs).
+- I/O & HTTP clients: No timeouts/retries/circuit breakers (e.g., HttpClient, RestTemplate, WebClient); SSLSocketFactory/TLS verification disabled; large payloads buffered in memory instead of streaming.
+- Concurrency & Resources: Blocking calls on reactive/async threads; unbounded ExecutorService/Scheduler; not closing streams/sockets; missing try-with-resources; misuse of synchronized leading to contention; unsafe publication/races.
+- Security & Crypto: MessageDigest with MD5/SHA-1 for passwords (use bcrypt/Argon2/PBKDF2); SecureRandom vs Random for secrets; JWT without signature/verification; weak CSRF handling where applicable.
+- Serialization & XML/JSON: Jackson default typing enabling polymorphic gadget chains; SnakeYAML unsafe load; XML parsers without secure features (XXE).
+- Logging & Errors: Logging sensitive data (tokens/PII); excessive logging in hot paths; broad catch (Exception) suppressing failures.
+
+Context: Here are the code changes (diff or full files):`,
+
+php: `Role & Goal
+You are a senior PHP engineer (10+ years) reviewing only the provided diff/files for enterprise PHP apps (Laravel/Symfony/WordPress/custom frameworks). Produce a single summary comment (no inline clutter) that highlights critical, hard-to-spot issues across Performance, Security, Maintainability, and Best Practices.
+
+Scope & Exclusions (very important)
+- Focus on critical risks: exploitable security flaws, meaningful performance regressions, memory/resource leaks, unsafe patterns, architectural violations.
+- Ignore style/formatting/naming/import order/linters/auto-formatters (phpcs/php-cs-fixer) concerns, and any non-material preferences.
+- Do not assume code that is not shown. If essential context is missing, do NOT invent details: lower confidence and/or treat the point as a Suggestion.
+
+Severity Scoring (mandatory)
+For EACH issue, assign 0–5 scores:
+- impact
+- exploitability
+- likelihood
+- blast_radius
+- evidence_strength
+
+Compute:
+severity_score = 0.35*impact + 0.30*exploitability + 0.20*likelihood + 0.10*blast_radius + 0.05*evidence_strength
+
+Set "severity_proposed" using ONLY:
+- "critical" if severity_score ≥ 3.6 AND evidence_strength ≥ 3
+- otherwise "suggestion"
+
+Auto-critical overrides (regardless of score)
+- Unsafe deserialization/code execution on untrusted input (e.g., \\unserialize, \\eval, dynamic \\include/\\require from user input).
+- Hard-coded secrets/credentials/API keys/private keys in source or configs (e.g., committing .env values).
+- SQL injection via string concatenation (no prepared statements/parameter binding), or raw queries with user input.
+- Cross-site scripting (XSS): echoing unescaped user data in templates (Blade/Twig/Plain PHP) or building HTML with untrusted input.
+- CSRF missing/disabled on state-changing routes where framework support exists.
+- Insecure file upload/handling (no whitelist validation, storing in webroot, no size/MIME checks), path traversal in file operations.
+- Remote call risks: SSRF via cURL/Guzzle with unvalidated URLs, disabling TLS verification.
+- Long-running workers/daemons (queues/Swoole/RoadRunner) leaking memory/resources or unbounded retries.
+
+Evidence Requirements (for EACH issue)
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
+
+Final Policy
+- final_recommendation = "do_not_merge" if any issue ends up "critical" with confidence ≥ 0.6; else "safe_to_merge".
+
+Output Format (JSON first, then a short human summary)
+Return THIS JSON object followed by a brief human-readable summary:
+
+\`\`\`json
+{
+  "summary": "1–3 sentences overall assessment.",
+  "issues": [
+    {
+      "id": "SEC-01",
+      "category": "security|performance|maintainability|best_practices",
+      "severity_proposed": "critical|suggestion",
+      "severity_score": 0.0,
+      "risk_factors": {
+        "impact": 0,
+        "exploitability": 0,
+        "likelihood": 0,
+        "blast_radius": 0,
+        "evidence_strength": 0
+      },
+      "confidence": 0.0,
+      "file": "app/Http/Controllers/UserController.php",
+      "lines": [120, 134],
+      "snippet": "<10-line minimal excerpt>",
+      "why_it_matters": "Concrete impact in 1 sentence.",
+      "fix": "Specific steps or code patch.",
+      "tests": "Brief test to prevent regression (e.g., Pest/PHPUnit feature test).",
+      "occurrences": [
+        {"file": "resources/views/users/index.blade.php", "lines": [88, 95]}
+      ]
+    }
+  ],
+  "metrics": { "critical_count": 0, "suggestion_count": 0 },
+  "final_recommendation": "safe_to_merge|do_not_merge"
+}
+\`\`\`
+
+Then add a short human summary:
+- Summary of key issues by category (bullets, ≤6 lines):
+  • 🔒 Security issues
+  • ⚡ Performance issues
+  • 🛠️ Maintainability issues
+  • 📚 Best Practices issues
+
+PHP-specific checks (only if visible in diff)
+- Web & Routing (Laravel/Symfony): missing authn/authz middleware; overly permissive CORS; mass-assignment vulnerabilities (unguarded models/fillable misuse); missing validation/sanitization on request data; returning sensitive data in responses.
+- Views/Templates: unescaped output in Blade/Twig/echo; building HTML via string concatenation with user input; unsafe raw tags (\\{!! !!}\\).
+- Database/ORM: raw queries with concatenated input; N+1 queries (eager loading missing); transactions missing for multi-step writes; lack of indexes for hot lookups.
+- I/O & HTTP clients: cURL/Guzzle without timeouts/retries; TLS verification disabled; large payloads buffered in memory instead of streamed; not closing file handles.
+- Sessions & Cookies: weak cookie flags (no HttpOnly/Secure/SameSite); storing secrets/PII in session without encryption.
+- Crypto & Passwords: using md5/sha1 or \\password_hash without appropriate algorithm options; using \\rand for tokens instead of \\random_bytes/\\bin2hex.
+- Errors & Logging: exposing stack traces in production; logging sensitive data (tokens/PII); broad catch blocks hiding failures.
+- Workers/Queues/Schedulers: memory leaks from static caches/large arrays, unbounded retries, missing backoff/dead-letter handling.
+
+Context: Here are the code changes (diff or full files):`
+};
+
+/**
+ * Get review prompt for specific language
+ */
+function getReviewPrompt(language) {
+  return LANGUAGE_PROMPTS[language] || LANGUAGE_PROMPTS.js; // Default to JS if language not found
+}
 
 /**
  * GitHub Actions Code Reviewer
@@ -128,6 +486,7 @@ class GitHubActionsReviewer {
     // Get inputs from action
     this.provider = core.getInput('llm_provider') || CONFIG.DEFAULT_PROVIDER;
     this.pathToFiles = this.parsePathToFiles(core.getInput('path_to_files') || CONFIG.DEFAULT_PATH_TO_FILES);
+    this.language = core.getInput('language') || CONFIG.DEFAULT_LANGUAGE;
     this.maxTokens = parseInt(core.getInput('max_tokens')) || CONFIG.MAX_TOKENS;
     this.temperature = parseFloat(core.getInput('temperature')) || CONFIG.TEMPERATURE;
     
@@ -199,12 +558,13 @@ class GitHubActionsReviewer {
   }
 
   /**
-   * Get changed files from git diff
+   * Get changed files from git diff with language filtering
    */
   getChangedFiles() {
     try {
       core.info('🔍 Detecting changed files...');
       core.info(`Comparing ${this.context.sha} against origin/${this.baseBranch}`);
+      core.info(`🔤 Language filter: ${this.language} (${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || 'Unknown'})`);
       
       const rawOutput = execSync(`git diff --name-only origin/${this.baseBranch}...HEAD`, { encoding: 'utf8' });
       const allFiles = rawOutput
@@ -220,16 +580,32 @@ class GitHubActionsReviewer {
                               file.endsWith('.test.js') ||
                               file.endsWith('.spec.js');
           
-          return matchesPath && !shouldIgnore;
+          // Check if file matches the specified language
+          const matchesLanguage = this.matchesLanguage(file);
+          
+          return matchesPath && !shouldIgnore && matchesLanguage;
         });
       
-      core.info(`Found ${allFiles.length} total changed files`);
+      core.info(`Found ${allFiles.length} changed files matching language: ${this.language}`);
       
       return allFiles;
     } catch (error) {
       core.error(`❌ Error getting changed files: ${error.message}`);
       return [];
     }
+  }
+
+  /**
+   * Check if file matches the specified language
+   */
+  matchesLanguage(filePath) {
+    const languageConfig = CONFIG.LANGUAGE_CONFIGS[this.language];
+    if (!languageConfig) {
+      core.warning(`⚠️  Unknown language: ${this.language}, defaulting to all files`);
+      return true; // Default to include all files if language not recognized
+    }
+    
+    return languageConfig.extensions.some(ext => filePath.endsWith(ext));
   }
 
   /**
@@ -654,70 +1030,126 @@ This chunk was too large to process completely. Here's a summary of what was det
     }
     
     // Extract and categorize information from each response
-    const summaries = [];
-    const criticalIssues = [];
-    const suggestions = [];
-    const performanceIssues = [];
-    const securityIssues = [];
-    const maintainabilityIssues = [];
-    const bestPracticeIssues = [];
-    let mergeDecision = null;
-    let confidenceScore = 0;
+    let combinedResponse = '';
     
-    responses.forEach((response, index) => {
-      const lowerResponse = response.toLowerCase();
-      
-      // Extract summary with chunk context
-      summaries.push(`**Chunk ${index + 1}/${totalChunks}:**\n${response}\n`);
-      
-      // Categorize issues by type
-      this.categorizeIssues(lowerResponse, index + 1, {
-        criticalIssues,
-        performanceIssues,
-        securityIssues,
-        maintainabilityIssues,
-        bestPracticeIssues
-      });
-      
-      // Look for merge decisions with confidence scoring
-      const decision = this.extractMergeDecision(lowerResponse);
-      if (decision) {
-        if (!mergeDecision) {
-          mergeDecision = decision;
-          confidenceScore = this.calculateConfidenceScore(lowerResponse);
-        } else if (decision !== mergeDecision) {
-          // Conflicting decisions - lower confidence
-          confidenceScore = Math.min(confidenceScore, 0.5);
-        }
-      }
+    responses.forEach((response) => {
+      combinedResponse += response
     });
-    
-    // Create intelligent combined response
-    let combinedResponse = this.createCombinedResponseHeader(responses.length, totalChunks);
-    
-    // Add decision with confidence
-    combinedResponse += this.createDecisionSection(mergeDecision, confidenceScore);
-    
-    // Add categorized issues
-    combinedResponse += this.createIssuesSummary({
-      criticalIssues,
-      performanceIssues,
-      securityIssues,
-      maintainabilityIssues,
-      bestPracticeIssues
-    });
-    
-    // Add detailed reviews
-    combinedResponse += `### 📋 **Detailed Reviews by Chunk:**\n\n`;
-    combinedResponse += summaries.join('\n---\n\n');
     
     return combinedResponse;
   }
 
   /**
-   * Check if LLM response indicates merge should be blocked
+   * Check if LLM response indicates merge should be blocked based on JSON analysis
    */
   checkMergeDecision(llmResponse) {
+    try {
+      // Try to extract all JSON objects from the response
+      const jsonMatches = llmResponse.match(/```json\s*([\s\S]*?)\s*```/g);
+      
+      if (jsonMatches && jsonMatches.length > 0) {
+        core.info(`📊 Found ${jsonMatches.length} JSON objects in response`);
+        
+        // Parse all JSON objects and combine their data
+        const allIssues = [];
+        let hasBlockingRecommendation = false;
+        let totalCriticalCount = 0;
+        
+        jsonMatches.forEach((match, index) => {
+          try {
+            const jsonStr = match.replace(/```json\s*/, '').replace(/\s*```/, '');
+            const reviewData = JSON.parse(jsonStr);
+            
+            core.info(`📋 Parsing JSON object ${index + 1}/${jsonMatches.length}: ${reviewData.issues?.length || 0} issues`);
+            
+            // Check final recommendation from this chunk
+            if (reviewData.final_recommendation) {
+              if (reviewData.final_recommendation === 'do_not_merge') {
+                hasBlockingRecommendation = true;
+                core.info(`🤖 Chunk ${index + 1} final recommendation: ${reviewData.final_recommendation} (BLOCK)`);
+              } else {
+                core.info(`🤖 Chunk ${index + 1} final recommendation: ${reviewData.final_recommendation} (APPROVE)`);
+              }
+            }
+            
+            // Collect issues
+            if (reviewData.issues && Array.isArray(reviewData.issues)) {
+              reviewData.issues.forEach(issue => {
+                // Add chunk context to issue
+                const issueWithContext = {
+                  ...issue,
+                  chunk: index + 1,
+                  originalId: issue.id
+                };
+                allIssues.push(issueWithContext);
+              });
+            }
+            
+            // Collect metrics
+            if (reviewData.metrics) {
+              totalCriticalCount += reviewData.metrics.critical_count || 0;
+            }
+            
+          } catch (parseError) {
+            core.warning(`⚠️  Error parsing JSON object ${index + 1}: ${parseError.message}`);
+          }
+        });
+        
+        // Check if any chunk recommended blocking
+        if (hasBlockingRecommendation) {
+          core.info(`🚨 At least one chunk recommended blocking the merge`);
+          return true;
+        }
+        
+        // Analyze all issues based on severity and confidence
+        if (allIssues.length > 0) {
+          const criticalIssues = allIssues.filter(issue => 
+            issue.severity_proposed === 'critical' && issue.confidence >= 0.6
+          );
+          
+          const highConfidenceCritical = criticalIssues.length;
+          
+          if (highConfidenceCritical > 0) {
+            core.info(`🚨 Found ${highConfidenceCritical} critical issues with confidence ≥ 0.6 across all chunks`);
+            core.info(`   Issues: ${criticalIssues.map(i => `${i.originalId} (${i.category}, Chunk ${i.chunk}, score: ${i.severity_score?.toFixed(1) || 'N/A'})`).join(', ')}`);
+            return true; // Block merge
+          }
+          
+          // Log all issues for transparency with severity scores
+          const allIssuesSummary = allIssues.map(issue => 
+            `${issue.severity_proposed.toUpperCase()} ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, score: ${issue.severity_score?.toFixed(1) || 'N/A'}, confidence: ${issue.confidence})`
+          );
+          
+          if (allIssuesSummary.length > 0) {
+            core.info(`📋 All issues found: ${allIssuesSummary.join(', ')}`);
+          }
+        }
+        
+        // Check combined metrics
+        if (totalCriticalCount > 0) {
+          core.info(`🚨 Total critical issues count across all chunks: ${totalCriticalCount}`);
+          return true; // Block merge if any critical issues
+        }
+        
+        core.info('✅ No critical issues found across all chunks - safe to merge');
+        return false;
+      }
+      
+      // Fallback to old text-based parsing if JSON not found
+      core.warning('⚠️  JSON not found in response, falling back to text-based parsing');
+      return this.checkMergeDecisionLegacy(llmResponse);
+      
+    } catch (error) {
+      core.warning(`⚠️  Error parsing JSON response: ${error.message}`);
+      core.warning('⚠️  Falling back to text-based parsing');
+      return this.checkMergeDecisionLegacy(llmResponse);
+    }
+  }
+
+  /**
+   * Legacy text-based merge decision checking (fallback)
+   */
+  checkMergeDecisionLegacy(llmResponse) {
     const response = llmResponse.toLowerCase();
 
     // Check for explicit approval phrases
@@ -777,7 +1209,7 @@ This chunk was too large to process completely. Here's a summary of what was det
   }
 
   /**
-   * Generate PR comment content
+   * Generate PR comment content with enhanced JSON parsing
    */
   generatePRComment(shouldBlockMerge, changedFiles, llmResponse) {
     const status = shouldBlockMerge ? '❌ **DO NOT MERGE**' : '✅ **SAFE TO MERGE**';
@@ -785,9 +1217,121 @@ This chunk was too large to process completely. Here's a summary of what was det
       ? 'Issues found that must be addressed before merging' 
       : 'All changes are safe and well-implemented';
 
-    return `## 🤖 LLM Code Review
+    // Try to extract and parse JSON for enhanced display
+    let reviewSummary = '';
+    let issueDetails = '';
+    
+    try {
+      // Find all JSON matches in the response
+      const jsonMatches = llmResponse.match(/```json\s*([\s\S]*?)\s*```/g);
+      
+      if (jsonMatches && jsonMatches.length > 0) {
+        core.info(`📊 Found ${jsonMatches.length} JSON objects in response`);
+        
+        // Parse all JSON objects and combine their data
+        const allIssues = [];
+        const allSummaries = [];
+        let totalCriticalCount = 0;
+        let totalSuggestionCount = 0;
+        
+        jsonMatches.forEach((match, index) => {
+          try {
+            const jsonStr = match.replace(/```json\s*/, '').replace(/\s*```/, '');
+            const reviewData = JSON.parse(jsonStr);
+            
+            core.info(`📋 Parsing JSON object ${index + 1}/${jsonMatches.length}: ${reviewData.issues?.length || 0} issues`);
+            
+            // Collect summary
+            if (reviewData.summary) {
+              allSummaries.push(`**Chunk ${index + 1}**: ${reviewData.summary}`);
+            }
+            
+            // Collect issues
+            if (reviewData.issues && Array.isArray(reviewData.issues)) {
+              reviewData.issues.forEach(issue => {
+                // Add chunk context to issue
+                const issueWithContext = {
+                  ...issue,
+                  chunk: index + 1,
+                  originalId: issue.id
+                };
+                allIssues.push(issueWithContext);
+              });
+            }
+            
+            // Collect metrics
+            if (reviewData.metrics) {
+              totalCriticalCount += reviewData.metrics.critical_count || 0;
+              totalSuggestionCount += reviewData.metrics.suggestion_count || 0;
+            }
+            
+          } catch (parseError) {
+            core.warning(`⚠️  Error parsing JSON object ${index + 1}: ${parseError.message}`);
+          }
+        });
+        
+        // Create combined summary
+        if (allSummaries.length > 0) {
+          reviewSummary = `**AI Summary**: ${allSummaries.join(' ')}\n\n`;
+        }
+        
+        // Create structured issue display from combined data
+        if (allIssues.length > 0) {
+          const criticalIssues = allIssues.filter(i => i.severity_proposed === 'critical');
+          const suggestions = allIssues.filter(i => i.severity_proposed === 'suggestion');
+          
+          issueDetails = `## 🔍 **Issues Found**\n\n`;
+          
+          if (criticalIssues.length > 0) {
+            issueDetails += `### 🚨 **Critical Issues (${criticalIssues.length})**\n`;
+            criticalIssues.forEach(issue => {
+              issueDetails += `🔴 ${issue.originalId} - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
+              issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
+              issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
+              issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
+              issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
+              if (issue.fix) {
+                issueDetails += `- **Fix**: ${issue.fix}\n`;
+              }
+              if (issue.tests) {
+                issueDetails += `- **Test**: ${issue.tests}\n`;
+              }
+              issueDetails += `\n`;
+            });
+          }
+          
+          if (suggestions.length > 0) {
+            issueDetails += `### 💡 **Suggestions (${suggestions.length})**\n`;
+            suggestions.forEach(issue => {
+              issueDetails += `🟡 ${issue.originalId} - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
+              issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
+              issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
+              issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
+              issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
+              if (issue.fix) {
+                issueDetails += `- **Fix**: ${issue.fix}\n`;
+              }
+              issueDetails += `\n`;
+            });
+          }
+          
+          // Add combined metrics
+          issueDetails += `### 📊 **Review Metrics**\n`;
+          issueDetails += `- **Critical Issues**: ${totalCriticalCount}\n`;
+          issueDetails += `- **Suggestions**: ${totalSuggestionCount}\n`;
+          issueDetails += `- **Total Issues**: ${allIssues.length}\n`;
+          issueDetails += `- **Chunks Processed**: ${jsonMatches.length}\n\n`;
+        }
+      }
+    } catch (error) {
+      core.warning(`⚠️  Error parsing JSON for enhanced comment: ${error.message}`);
+    }
+
+    return `## 🤖 DeepReview
 
 **Overall Assessment**: ${status} - ${statusDescription}
+
+${reviewSummary}
 
 **Review Details:**
 - **Provider**: ${this.provider.toUpperCase()}
@@ -797,25 +1341,18 @@ This chunk was too large to process completely. Here's a summary of what was det
 - **Head Branch**: ${(this.context.payload.pull_request && this.context.payload.pull_request.head && this.context.payload.pull_request.head.ref) || 'HEAD'}
 - **Path Filter**: ${this.pathToFiles.join(', ')}
 
-**Files Reviewed:**
-${changedFiles.map(file => `- \`${file}\``).join('\n')}
-
 ---
 
-## 📋 **Complete LLM Review**
-
-${llmResponse}
+${issueDetails}
 
 ---
 
 **What to do next:**
 ${shouldBlockMerge 
-  ? '1. 🔍 Review the detailed analysis above\n2. 🛠️ Fix the issues mentioned in the review\n3. 🔄 Push changes and re-run the review\n4. ✅ Merge only after all issues are resolved'
-  : '1. ✅ Review the detailed analysis above\n2. 🚀 Safe to merge when ready\n3. 💡 Consider any optimization suggestions as future improvements'
+  ? '1. 🔍 Review the critical issues above\n2. 🛠️ Fix the issues mentioned in the review\n3. 🔄 Push changes and re-run the review\n4. ✅ Merge only after all critical issues are resolved'
+  : '1. ✅ Review the suggestions above\n2. 🚀 Safe to merge when ready\n3. 💡 Consider any optimization suggestions as future improvements'
 }
-
----
-*This review was automatically generated by @tajawal/web-code-review*`;
+`;
   }
 
   /**
@@ -830,6 +1367,7 @@ ${shouldBlockMerge
     core.info(`  - Head Ref: ${this.context.sha}`);
     core.info(`  - Review Date: ${new Date().toLocaleString()}`);
     core.info(`  - Reviewer: ${this.provider.toUpperCase()} LLM`);
+    core.info(`  - Language: ${this.language} (${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || 'Unknown'})`);
     core.info(`  - Path to Files: ${this.pathToFiles.join(', ')}`);
     core.info(`  - PR Number: ${(this.context.issue && this.context.issue.number) || 'Not available'}`);
     core.info(`  - Chunk Size: ${Math.round(this.chunkSize / 1024)}KB (${this.chunkSize} bytes)`);
@@ -877,186 +1415,99 @@ ${shouldBlockMerge
   }
 
   /**
-   * Log final decision
+   * Log final decision with enhanced details
    */
-  logFinalDecision(shouldBlockMerge) {
+  logFinalDecision(shouldBlockMerge, llmResponse) {
+    try {
+      // Try to extract all JSON objects for detailed logging
+      const jsonMatches = llmResponse.match(/```json\s*([\s\S]*?)\s*```/g);
+      if (jsonMatches && jsonMatches.length > 0) {
+        core.info(`📊 Found ${jsonMatches.length} JSON objects for detailed logging`);
+        
+        // Parse all JSON objects and combine their data
+        const allIssues = [];
+        let totalCriticalCount = 0;
+        let totalSuggestionCount = 0;
+        
+        jsonMatches.forEach((match, index) => {
+          try {
+            const jsonStr = match.replace(/```json\s*/, '').replace(/\s*```/, '');
+            const reviewData = JSON.parse(jsonStr);
+            
+            // Collect issues
+            if (reviewData.issues && Array.isArray(reviewData.issues)) {
+              reviewData.issues.forEach(issue => {
+                // Add chunk context to issue
+                const issueWithContext = {
+                  ...issue,
+                  chunk: index + 1,
+                  originalId: issue.id
+                };
+                allIssues.push(issueWithContext);
+              });
+            }
+            
+            // Collect metrics
+            if (reviewData.metrics) {
+              totalCriticalCount += reviewData.metrics.critical_count || 0;
+              totalSuggestionCount += reviewData.metrics.suggestion_count || 0;
+            }
+            
+          } catch (parseError) {
+            core.warning(`⚠️  Error parsing JSON object ${index + 1} for logging: ${parseError.message}`);
+          }
+        });
+        
+        if (shouldBlockMerge) {
+          const criticalIssues = allIssues.filter(i => i.severity_proposed === 'critical');
+          const highConfidenceCritical = criticalIssues.filter(i => i.confidence >= 0.6);
+          
+          core.setFailed(`🚨 MERGE BLOCKED: LLM review found ${criticalIssues.length} critical issues (${highConfidenceCritical.length} with high confidence ≥ 0.6) across ${jsonMatches.length} chunks`);
+          
+          if (highConfidenceCritical.length > 0) {
+            core.info('   High-confidence critical issues:');
+            highConfidenceCritical.forEach(issue => {
+              core.info(`   - ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, score: ${issue.severity_score?.toFixed(1) || 'N/A'}, ${Math.round(issue.confidence * 100)}% confidence)`);
+              core.info(`     File: ${issue.file}, Lines: ${issue.lines.join('-')}`);
+              if (issue.risk_factors) {
+                core.info(`     Risk Factors: I:${issue.risk_factors.impact} E:${issue.risk_factors.exploitability} L:${issue.risk_factors.likelihood} B:${issue.risk_factors.blast_radius} Ev:${issue.risk_factors.evidence_strength}`);
+              }
+              core.info(`     Impact: ${issue.why_it_matters}`);
+            });
+          }
+          
+          core.info('   Please fix the critical issues mentioned above and run the review again.');
+        } else {
+          const suggestions = allIssues.filter(i => i.severity_proposed === 'suggestion');
+          core.info(`✅ MERGE APPROVED: No critical issues found across ${jsonMatches.length} chunks. ${suggestions.length} suggestions available for consideration.`);
+          
+          if (suggestions.length > 0) {
+            core.info('   Suggestions for improvement:');
+            suggestions.slice(0, 3).forEach(issue => { // Show first 3 suggestions
+              core.info(`   - ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, score: ${issue.severity_score?.toFixed(1) || 'N/A'}, ${Math.round(issue.confidence * 100)}% confidence)`);
+            });
+            if (suggestions.length > 3) {
+              core.info(`   ... and ${suggestions.length - 3} more suggestions`);
+            }
+          }
+        }
+        
+        // Log combined metrics
+        core.info(`📊 Review Summary: ${totalCriticalCount} critical, ${totalSuggestionCount} suggestions across ${jsonMatches.length} chunks`);
+        
+        return;
+      }
+    } catch (error) {
+      core.warning(`⚠️  Error parsing JSON for detailed logging: ${error.message}`);
+    }
+    
+    // Fallback to simple logging
     if (shouldBlockMerge) {
       core.setFailed('🚨 MERGE BLOCKED: LLM review found critical issues that must be addressed before merging.');
       core.info('   Please fix the issues mentioned above and run the review again.');
     } else {
       core.info('✅ MERGE APPROVED: No critical issues found. Safe to merge.');
     }
-  }
-
-  /**
-   * Categorize issues by type from response text
-   */
-  categorizeIssues(responseText, chunkIndex, categories) {
-    // Critical issues
-    for (const issue of CONFIG.CRITICAL_ISSUES) {
-      if (responseText.includes(issue)) {
-        categories.criticalIssues.push(`- ${issue} (chunk ${chunkIndex})`);
-      }
-    }
-    
-    // Performance issues
-    const performanceKeywords = ['performance', 'slow', 'inefficient', 'memory leak', 're-render', 'optimization'];
-    for (const keyword of performanceKeywords) {
-      if (responseText.includes(keyword)) {
-        categories.performanceIssues.push(`- Performance concern: ${keyword} (chunk ${chunkIndex})`);
-      }
-    }
-    
-    // Security issues
-    const securityKeywords = ['security', 'vulnerability', 'xss', 'csrf', 'injection', 'authentication', 'authorization'];
-    for (const keyword of securityKeywords) {
-      if (responseText.includes(keyword)) {
-        categories.securityIssues.push(`- Security concern: ${keyword} (chunk ${chunkIndex})`);
-      }
-    }
-    
-    // Maintainability issues
-    const maintainabilityKeywords = ['maintainability', 'complexity', 'readability', 'refactor', 'clean code'];
-    for (const keyword of maintainabilityKeywords) {
-      if (responseText.includes(keyword)) {
-        categories.maintainabilityIssues.push(`- Maintainability concern: ${keyword} (chunk ${chunkIndex})`);
-      }
-    }
-    
-    // Best practices issues
-    const bestPracticeKeywords = ['best practice', 'anti-pattern', 'code smell', 'standard', 'convention'];
-    for (const keyword of bestPracticeKeywords) {
-      if (responseText.includes(keyword)) {
-        categories.bestPracticeIssues.push(`- Best practice concern: ${keyword} (chunk ${chunkIndex})`);
-      }
-    }
-  }
-
-  /**
-   * Extract merge decision from response text
-   */
-  extractMergeDecision(responseText) {
-    // Check for blocking phrases first
-    for (const phrase of CONFIG.BLOCKING_PHRASES) {
-      if (responseText.includes(phrase)) {
-        return 'BLOCK';
-      }
-    }
-    
-    // Check for approval phrases
-    for (const phrase of CONFIG.APPROVAL_PHRASES) {
-      if (responseText.includes(phrase)) {
-        return 'APPROVE';
-      }
-    }
-    
-    return null;
-  }
-
-  /**
-   * Calculate confidence score for merge decision
-   */
-  calculateConfidenceScore(responseText) {
-    let score = 0.5; // Base score
-    
-    // Higher confidence for explicit decisions
-    if (responseText.includes('safe to merge') || responseText.includes('do not merge')) {
-      score += 0.3;
-    }
-    
-    // Higher confidence for detailed reasoning
-    if (responseText.includes('because') || responseText.includes('reason')) {
-      score += 0.2;
-    }
-    
-    // Lower confidence for uncertain language
-    if (responseText.includes('maybe') || responseText.includes('possibly') || responseText.includes('consider')) {
-      score -= 0.2;
-    }
-    
-    return Math.max(0.1, Math.min(1.0, score));
-  }
-
-  /**
-   * Create combined response header
-   */
-  createCombinedResponseHeader(processedChunks, totalChunks) {
-    let header = `## 🔄 **Combined Review Results**\n\n`;
-    header += `*This review was generated from ${processedChunks}/${totalChunks} chunks of the diff*\n\n`;
-    
-    if (processedChunks < totalChunks) {
-      header += `⚠️ **Note**: ${totalChunks - processedChunks} chunks failed to process and were excluded from this review.\n\n`;
-    }
-    
-    return header;
-  }
-
-  /**
-   * Create decision section with confidence
-   */
-  createDecisionSection(decision, confidence) {
-    let section = '';
-    
-    if (decision === 'BLOCK') {
-      section += `### ❌ **OVERALL DECISION: DO NOT MERGE**\n\n`;
-      if (confidence < 0.7) {
-        section += `*Confidence: ${Math.round(confidence * 100)}% - Manual review strongly recommended*\n\n`;
-      }
-    } else if (decision === 'APPROVE') {
-      section += `### ✅ **OVERALL DECISION: SAFE TO MERGE**\n\n`;
-      if (confidence < 0.8) {
-        section += `*Confidence: ${Math.round(confidence * 100)}% - Consider additional review*\n\n`;
-      }
-    } else {
-      section += `### ⚠️ **OVERALL DECISION: MANUAL REVIEW RECOMMENDED**\n\n`;
-      section += `*No clear decision from automated review - human review required*\n\n`;
-    }
-    
-    return section;
-  }
-
-  /**
-   * Create issues summary section
-   */
-  createIssuesSummary(issues) {
-    let summary = '';
-    
-    // Critical issues (always shown first)
-    if (issues.criticalIssues.length > 0) {
-      summary += `### 🚨 **Critical Issues Found:**\n`;
-      summary += [...new Set(issues.criticalIssues)].join('\n');
-      summary += `\n\n`;
-    }
-    
-    // Security issues
-    if (issues.securityIssues.length > 0) {
-      summary += `### 🔒 **Security Concerns:**\n`;
-      summary += [...new Set(issues.securityIssues)].join('\n');
-      summary += `\n\n`;
-    }
-    
-    // Performance issues
-    if (issues.performanceIssues.length > 0) {
-      summary += `### ⚡ **Performance Concerns:**\n`;
-      summary += [...new Set(issues.performanceIssues)].join('\n');
-      summary += `\n\n`;
-    }
-    
-    // Maintainability issues
-    if (issues.maintainabilityIssues.length > 0) {
-      summary += `### 🛠️ **Maintainability Concerns:**\n`;
-      summary += [...new Set(issues.maintainabilityIssues)].join('\n');
-      summary += `\n\n`;
-    }
-    
-    // Best practices issues
-    if (issues.bestPracticeIssues.length > 0) {
-      summary += `### 📚 **Best Practice Concerns:**\n`;
-      summary += [...new Set(issues.bestPracticeIssues)].join('\n');
-      summary += `\n\n`;
-    }
-    
-    return summary;
   }
 
   /**
@@ -1073,9 +1524,13 @@ ${shouldBlockMerge
 
     // LLM Review
     core.info(`🤖 Running LLM Review of branch changes...\n`);
+    
+    // Get language-specific review prompt
+    const reviewPrompt = getReviewPrompt(this.language);
+    core.info(`📝 Using ${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || this.language} review prompt`);
       
     const fullDiff = this.getFullDiff();
-    const llmResponse = await this.callLLM(REVIEW_PROMPT, fullDiff);
+    const llmResponse = await this.callLLM(reviewPrompt, fullDiff);
     
     if (this.logLLMResponse(llmResponse)) {
       // Check if LLM recommends blocking the merge
@@ -1085,7 +1540,7 @@ ${shouldBlockMerge
       const prComment = this.generatePRComment(shouldBlockMerge, changedFiles, llmResponse);
       await this.addPRComment(prComment);
       
-      this.logFinalDecision(shouldBlockMerge);
+      this.logFinalDecision(shouldBlockMerge, llmResponse);
     }
   }
 }
