@@ -729,13 +729,13 @@ This chunk was too large to process completely. Here's a summary of what was det
     combinedResponse += this.createDecisionSection(mergeDecision, confidenceScore);
     
     // Add categorized issues
-    combinedResponse += this.createIssuesSummary({
-      criticalIssues,
-      performanceIssues,
-      securityIssues,
-      maintainabilityIssues,
-      bestPracticeIssues
-    });
+    // combinedResponse += this.createIssuesSummary({
+    //   criticalIssues,
+    //   performanceIssues,
+    //   securityIssues,
+    //   maintainabilityIssues,
+    //   bestPracticeIssues
+    // });
     
     // Add detailed reviews
     combinedResponse += `### 📋 **Detailed Reviews by Chunk:**\n\n`;
@@ -749,57 +749,94 @@ This chunk was too large to process completely. Here's a summary of what was det
    */
   checkMergeDecision(llmResponse) {
     try {
-      // Try to extract JSON from the response
-      const jsonMatch = llmResponse.match(/```json\s*([\s\S]*?)\s*```/);
+      // Try to extract all JSON objects from the response
+      const jsonMatches = llmResponse.match(/```json\s*([\s\S]*?)\s*```/g);
       
-      if (jsonMatch) {
-        const jsonStr = jsonMatch[1];
-        const reviewData = JSON.parse(jsonStr);
+      if (jsonMatches && jsonMatches.length > 0) {
+        core.info(`📊 Found ${jsonMatches.length} JSON objects in response`);
         
-        core.info(`📊 Parsed JSON review data: ${reviewData.issues?.length || 0} issues found`);
+        // Parse all JSON objects and combine their data
+        const allIssues = [];
+        let hasBlockingRecommendation = false;
+        let totalCriticalCount = 0;
         
-        // Check final recommendation from LLM
-        if (reviewData.final_recommendation) {
-          const shouldBlock = reviewData.final_recommendation === 'do_not_merge';
-          core.info(`🤖 LLM final recommendation: ${reviewData.final_recommendation} (${shouldBlock ? 'BLOCK' : 'APPROVE'})`);
-          return shouldBlock;
+        jsonMatches.forEach((match, index) => {
+          try {
+            const jsonStr = match.replace(/```json\s*/, '').replace(/\s*```/, '');
+            const reviewData = JSON.parse(jsonStr);
+            
+            core.info(`📋 Parsing JSON object ${index + 1}/${jsonMatches.length}: ${reviewData.issues?.length || 0} issues`);
+            
+            // Check final recommendation from this chunk
+            if (reviewData.final_recommendation) {
+              if (reviewData.final_recommendation === 'do_not_merge') {
+                hasBlockingRecommendation = true;
+                core.info(`🤖 Chunk ${index + 1} final recommendation: ${reviewData.final_recommendation} (BLOCK)`);
+              } else {
+                core.info(`🤖 Chunk ${index + 1} final recommendation: ${reviewData.final_recommendation} (APPROVE)`);
+              }
+            }
+            
+            // Collect issues
+            if (reviewData.issues && Array.isArray(reviewData.issues)) {
+              reviewData.issues.forEach(issue => {
+                // Add chunk context to issue
+                const issueWithContext = {
+                  ...issue,
+                  chunk: index + 1,
+                  originalId: issue.id
+                };
+                allIssues.push(issueWithContext);
+              });
+            }
+            
+            // Collect metrics
+            if (reviewData.metrics) {
+              totalCriticalCount += reviewData.metrics.critical_count || 0;
+            }
+            
+          } catch (parseError) {
+            core.warning(`⚠️  Error parsing JSON object ${index + 1}: ${parseError.message}`);
+          }
+        });
+        
+        // Check if any chunk recommended blocking
+        if (hasBlockingRecommendation) {
+          core.info(`🚨 At least one chunk recommended blocking the merge`);
+          return true;
         }
         
-        // Analyze issues based on severity and confidence
-        if (reviewData.issues && Array.isArray(reviewData.issues)) {
-          const criticalIssues = reviewData.issues.filter(issue => 
+        // Analyze all issues based on severity and confidence
+        if (allIssues.length > 0) {
+          const criticalIssues = allIssues.filter(issue => 
             issue.severity === 'critical' && issue.confidence >= 0.6
           );
           
           const highConfidenceCritical = criticalIssues.length;
           
           if (highConfidenceCritical > 0) {
-            core.info(`🚨 Found ${highConfidenceCritical} critical issues with confidence ≥ 0.6`);
-            core.info(`   Issues: ${criticalIssues.map(i => `${i.id} (${i.category})`).join(', ')}`);
+            core.info(`🚨 Found ${highConfidenceCritical} critical issues with confidence ≥ 0.6 across all chunks`);
+            core.info(`   Issues: ${criticalIssues.map(i => `${i.originalId} (${i.category}, Chunk ${i.chunk})`).join(', ')}`);
             return true; // Block merge
           }
           
           // Log all issues for transparency
-          const allIssues = reviewData.issues.map(issue => 
-            `${issue.severity.toUpperCase()} ${issue.id}: ${issue.category} (confidence: ${issue.confidence})`
+          const allIssuesSummary = allIssues.map(issue => 
+            `${issue.severity.toUpperCase()} ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, confidence: ${issue.confidence})`
           );
           
-          if (allIssues.length > 0) {
-            core.info(`📋 All issues found: ${allIssues.join(', ')}`);
+          if (allIssuesSummary.length > 0) {
+            core.info(`📋 All issues found: ${allIssuesSummary.join(', ')}`);
           }
         }
         
-        // Check metrics if available
-        if (reviewData.metrics) {
-          core.info(`📊 Review metrics: ${reviewData.metrics.critical_count || 0} critical, ${reviewData.metrics.suggestion_count || 0} suggestions`);
-          
-          if (reviewData.metrics.critical_count > 0) {
-            core.info(`🚨 Critical issues count: ${reviewData.metrics.critical_count}`);
-            return true; // Block merge if any critical issues
-          }
+        // Check combined metrics
+        if (totalCriticalCount > 0) {
+          core.info(`🚨 Total critical issues count across all chunks: ${totalCriticalCount}`);
+          return true; // Block merge if any critical issues
         }
         
-        core.info('✅ No critical issues found - safe to merge');
+        core.info('✅ No critical issues found across all chunks - safe to merge');
         return false;
       }
       
@@ -890,26 +927,70 @@ This chunk was too large to process completely. Here's a summary of what was det
     let issueDetails = '';
     
     try {
-      const jsonMatch = llmResponse.match(/```json\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        const reviewData = JSON.parse(jsonMatch[1]);
+      // Find all JSON matches in the response
+      const jsonMatches = llmResponse.match(/```json\s*([\s\S]*?)\s*```/g);
+      
+      if (jsonMatches && jsonMatches.length > 0) {
+        core.info(`📊 Found ${jsonMatches.length} JSON objects in response`);
         
-        // Create enhanced summary from JSON data
-        if (reviewData.summary) {
-          reviewSummary = `**AI Summary**: ${reviewData.summary}\n\n`;
+        // Parse all JSON objects and combine their data
+        const allIssues = [];
+        const allSummaries = [];
+        let totalCriticalCount = 0;
+        let totalSuggestionCount = 0;
+        
+        jsonMatches.forEach((match, index) => {
+          try {
+            const jsonStr = match.replace(/```json\s*/, '').replace(/\s*```/, '');
+            const reviewData = JSON.parse(jsonStr);
+            
+            core.info(`📋 Parsing JSON object ${index + 1}/${jsonMatches.length}: ${reviewData.issues?.length || 0} issues`);
+            
+            // Collect summary
+            if (reviewData.summary) {
+              allSummaries.push(`**Chunk ${index + 1}**: ${reviewData.summary}`);
+            }
+            
+            // Collect issues
+            if (reviewData.issues && Array.isArray(reviewData.issues)) {
+              reviewData.issues.forEach(issue => {
+                // Add chunk context to issue
+                const issueWithContext = {
+                  ...issue,
+                  chunk: index + 1,
+                  originalId: issue.id
+                };
+                allIssues.push(issueWithContext);
+              });
+            }
+            
+            // Collect metrics
+            if (reviewData.metrics) {
+              totalCriticalCount += reviewData.metrics.critical_count || 0;
+              totalSuggestionCount += reviewData.metrics.suggestion_count || 0;
+            }
+            
+          } catch (parseError) {
+            core.warning(`⚠️  Error parsing JSON object ${index + 1}: ${parseError.message}`);
+          }
+        });
+        
+        // Create combined summary
+        if (allSummaries.length > 0) {
+          reviewSummary = `**AI Summary**: ${allSummaries.join(' ')}\n\n`;
         }
         
-        // Create structured issue display
-        if (reviewData.issues && reviewData.issues.length > 0) {
-          const criticalIssues = reviewData.issues.filter(i => i.severity === 'critical');
-          const suggestions = reviewData.issues.filter(i => i.severity === 'suggestion');
+        // Create structured issue display from combined data
+        if (allIssues.length > 0) {
+          const criticalIssues = allIssues.filter(i => i.severity === 'critical');
+          const suggestions = allIssues.filter(i => i.severity === 'suggestion');
           
           issueDetails = `## 🔍 **Issues Found**\n\n`;
           
           if (criticalIssues.length > 0) {
             issueDetails += `### 🚨 **Critical Issues (${criticalIssues.length})**\n`;
             criticalIssues.forEach(issue => {
-              issueDetails += `**${issue.id}** - ${issue.category.toUpperCase()}\n`;
+              issueDetails += `**${issue.originalId}** - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
               issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
               issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
@@ -926,7 +1007,7 @@ This chunk was too large to process completely. Here's a summary of what was det
           if (suggestions.length > 0) {
             issueDetails += `### 💡 **Suggestions (${suggestions.length})**\n`;
             suggestions.forEach(issue => {
-              issueDetails += `**${issue.id}** - ${issue.category.toUpperCase()}\n`;
+              issueDetails += `**${issue.originalId}** - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
               issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
               issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
@@ -937,13 +1018,12 @@ This chunk was too large to process completely. Here's a summary of what was det
             });
           }
           
-          // Add metrics if available
-          if (reviewData.metrics) {
-            issueDetails += `### 📊 **Review Metrics**\n`;
-            issueDetails += `- **Critical Issues**: ${reviewData.metrics.critical_count || 0}\n`;
-            issueDetails += `- **Suggestions**: ${reviewData.metrics.suggestion_count || 0}\n`;
-            issueDetails += `- **Total Issues**: ${reviewData.issues.length}\n\n`;
-          }
+          // Add combined metrics
+          issueDetails += `### 📊 **Review Metrics**\n`;
+          issueDetails += `- **Critical Issues**: ${totalCriticalCount}\n`;
+          issueDetails += `- **Suggestions**: ${totalSuggestionCount}\n`;
+          issueDetails += `- **Total Issues**: ${allIssues.length}\n`;
+          issueDetails += `- **Chunks Processed**: ${jsonMatches.length}\n\n`;
         }
       }
     } catch (error) {
@@ -963,9 +1043,6 @@ ${reviewSummary}
 - **Base Branch**: ${this.baseBranch}
 - **Head Branch**: ${(this.context.payload.pull_request && this.context.payload.pull_request.head && this.context.payload.pull_request.head.ref) || 'HEAD'}
 - **Path Filter**: ${this.pathToFiles.join(', ')}
-
-**Files Reviewed:**
-${changedFiles.map(file => `- \`${file}\``).join('\n')}
 
 ---
 
@@ -1050,21 +1127,55 @@ ${shouldBlockMerge
    */
   logFinalDecision(shouldBlockMerge, llmResponse) {
     try {
-      // Try to extract JSON for detailed logging
-      const jsonMatch = llmResponse.match(/```json\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        const reviewData = JSON.parse(jsonMatch[1]);
+      // Try to extract all JSON objects for detailed logging
+      const jsonMatches = llmResponse.match(/```json\s*([\s\S]*?)\s*```/g);
+      if (jsonMatches && jsonMatches.length > 0) {
+        core.info(`📊 Found ${jsonMatches.length} JSON objects for detailed logging`);
+        
+        // Parse all JSON objects and combine their data
+        const allIssues = [];
+        let totalCriticalCount = 0;
+        let totalSuggestionCount = 0;
+        
+        jsonMatches.forEach((match, index) => {
+          try {
+            const jsonStr = match.replace(/```json\s*/, '').replace(/\s*```/, '');
+            const reviewData = JSON.parse(jsonStr);
+            
+            // Collect issues
+            if (reviewData.issues && Array.isArray(reviewData.issues)) {
+              reviewData.issues.forEach(issue => {
+                // Add chunk context to issue
+                const issueWithContext = {
+                  ...issue,
+                  chunk: index + 1,
+                  originalId: issue.id
+                };
+                allIssues.push(issueWithContext);
+              });
+            }
+            
+            // Collect metrics
+            if (reviewData.metrics) {
+              totalCriticalCount += reviewData.metrics.critical_count || 0;
+              totalSuggestionCount += reviewData.metrics.suggestion_count || 0;
+            }
+            
+          } catch (parseError) {
+            core.warning(`⚠️  Error parsing JSON object ${index + 1} for logging: ${parseError.message}`);
+          }
+        });
         
         if (shouldBlockMerge) {
-          const criticalIssues = reviewData.issues?.filter(i => i.severity === 'critical') || [];
+          const criticalIssues = allIssues.filter(i => i.severity === 'critical');
           const highConfidenceCritical = criticalIssues.filter(i => i.confidence >= 0.6);
           
-          core.setFailed(`🚨 MERGE BLOCKED: LLM review found ${criticalIssues.length} critical issues (${highConfidenceCritical.length} with high confidence ≥ 0.6)`);
+          core.setFailed(`🚨 MERGE BLOCKED: LLM review found ${criticalIssues.length} critical issues (${highConfidenceCritical.length} with high confidence ≥ 0.6) across ${jsonMatches.length} chunks`);
           
           if (highConfidenceCritical.length > 0) {
             core.info('   High-confidence critical issues:');
             highConfidenceCritical.forEach(issue => {
-              core.info(`   - ${issue.id}: ${issue.category} (${Math.round(issue.confidence * 100)}% confidence)`);
+              core.info(`   - ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, ${Math.round(issue.confidence * 100)}% confidence)`);
               core.info(`     File: ${issue.file}, Lines: ${issue.lines.join('-')}`);
               core.info(`     Impact: ${issue.why_it_matters}`);
             });
@@ -1072,13 +1183,13 @@ ${shouldBlockMerge
           
           core.info('   Please fix the critical issues mentioned above and run the review again.');
         } else {
-          const suggestions = reviewData.issues?.filter(i => i.severity === 'suggestion') || [];
-          core.info(`✅ MERGE APPROVED: No critical issues found. ${suggestions.length} suggestions available for consideration.`);
+          const suggestions = allIssues.filter(i => i.severity === 'suggestion');
+          core.info(`✅ MERGE APPROVED: No critical issues found across ${jsonMatches.length} chunks. ${suggestions.length} suggestions available for consideration.`);
           
           if (suggestions.length > 0) {
             core.info('   Suggestions for improvement:');
             suggestions.slice(0, 3).forEach(issue => { // Show first 3 suggestions
-              core.info(`   - ${issue.id}: ${issue.category} (${Math.round(issue.confidence * 100)}% confidence)`);
+              core.info(`   - ${issue.originalId}: ${issue.category} (Chunk ${issue.chunk}, ${Math.round(issue.confidence * 100)}% confidence)`);
             });
             if (suggestions.length > 3) {
               core.info(`   ... and ${suggestions.length - 3} more suggestions`);
@@ -1086,10 +1197,8 @@ ${shouldBlockMerge
           }
         }
         
-        // Log metrics if available
-        if (reviewData.metrics) {
-          core.info(`📊 Review Summary: ${reviewData.metrics.critical_count || 0} critical, ${reviewData.metrics.suggestion_count || 0} suggestions`);
-        }
+        // Log combined metrics
+        core.info(`📊 Review Summary: ${totalCriticalCount} critical, ${totalSuggestionCount} suggestions across ${jsonMatches.length} chunks`);
         
         return;
       }
@@ -1199,8 +1308,8 @@ ${shouldBlockMerge
    * Create combined response header
    */
   createCombinedResponseHeader(processedChunks, totalChunks) {
-    let header = `## 🔄 **Combined Review Results**\n\n`;
-    header += `*This review was generated from ${processedChunks}/${totalChunks} chunks of the diff*\n\n`;
+    let header = `\n\n*This review was generated from ${processedChunks}/${totalChunks} chunks of the diff*\n\n`;
+    
     
     if (processedChunks < totalChunks) {
       header += `⚠️ **Note**: ${totalChunks - processedChunks} chunks failed to process and were excluded from this review.\n\n`;
