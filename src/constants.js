@@ -142,7 +142,6 @@ Auto-critical overrides (regardless of score):
 Evidence Requirements (for EACH issue)
 - Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters
   (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
-- **IMPORTANT**: If the \`fix\` field contains code recommendations, wrap the code inside triple backticks with language identifier (\`\`\`javascript ... \`\`\`) so GitHub renders it as a syntax-highlighted code snippet. Example: \`\`\`javascript\nconst sanitizedInput = DOMPurify.sanitize(userInput);\n\`\`\`
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -173,7 +172,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "lines": [120, 134],
       "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
-      "fix": "Specific steps or code patch. If code: wrap in triple backticks with language identifier.",
+      "fix": "Specific steps or code patch.",
       "tests": "Brief test to prevent regression.",
       "occurrences": [
         { "file": "src/pages/List.tsx", "lines": [88, 95] }
@@ -235,7 +234,6 @@ Auto-critical overrides (regardless of score)
 
 Evidence Requirements (for EACH issue)
 - Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
-- **IMPORTANT**: If the \`fix\` field contains code recommendations, wrap the code inside triple backticks with language identifier (\`\`\`python ... \`\`\`) so GitHub renders it as a syntax-highlighted code snippet. Example: \`\`\`python\nsanitized_input = bleach.clean(user_input)\n\`\`\`
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -265,7 +263,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "lines": [120, 134],
       "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
-      "fix": "Specific steps or code patch. Wrap in triple backticks if code.",
+      "fix": "Specific steps or code patch.",
       "tests": "Brief test to prevent regression (e.g., pytest).",
       "occurrences": [
         {"file": "app/api/users.py", "lines": [88, 95]}
@@ -327,7 +325,6 @@ Auto-critical overrides (regardless of score)
 
 Evidence Requirements (for EACH issue)
 - Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
-- **IMPORTANT**: If the \`fix\` field contains code recommendations, wrap the code inside triple backticks with language identifier (\`\`\`java ... \`\`\`) so GitHub renders it as a syntax-highlighted code snippet. Example: \`\`\`java\nString sanitizedInput = Jsoup.clean(userInput, Whitelist.basic());\n\`\`\`
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -357,7 +354,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "lines": [120, 134],
       "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
-      "fix": "Specific steps or code patch. Wrap in triple backticks if code.",
+      "fix": "Specific steps or code patch.",
       "tests": "Brief test to prevent regression (e.g., JUnit + MockMvc).",
       "occurrences": [
         {"file": "src/main/java/com/example/api/UserController.java", "lines": [88, 95]}
@@ -416,13 +413,11 @@ Auto-critical overrides (regardless of score)
 - SQL injection via string concatenation (no prepared statements/parameter binding), or raw queries with user input.
 - Cross-site scripting (XSS): echoing unescaped user data in templates (Blade/Twig/Plain PHP) or building HTML with untrusted input.
 - CSRF missing/disabled on state-changing routes where framework support exists.
-- Insecure file upload/handling (no whitelist validation, storing in webroot, no size/MIME checks), path traversal in file operations.
-- Remote call risks: SSRF via cURL/Guzzle with unvalidated URLs, disabling TLS verification.
+- Insecure file upload/handlicURL/Guzzle with unvalidated URLs, disabling TLS verification.
 - Long-running workers/daemons (queues/Swoole/RoadRunner) leaking memory/resources or unbounded retries.
 
 Evidence Requirements (for EACH issue)
 - Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
-- **IMPORTANT**: If the \`fix\` field contains code recommendations, wrap the code inside triple backticks with language identifier (\`\`\`php ... \`\`\`) so GitHub renders it as a syntax-highlighted code snippet. Example: \`\`\`php\n$sanitizedInput = htmlspecialchars($userInput, ENT_QUOTES, 'UTF-8');\n\`\`\`
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -452,7 +447,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "lines": [120, 134],
       "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
-      "fix": "Specific steps or code patch. Wrap in triple backticks if code.",
+      "fix": "Specific steps or code patch.",
       "tests": "Brief test to prevent regression (e.g., Pest/PHPUnit feature test).",
       "occurrences": [
         {"file": "resources/views/users/index.blade.php", "lines": [88, 95]}
