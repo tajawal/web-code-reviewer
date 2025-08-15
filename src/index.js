@@ -815,7 +815,7 @@ This chunk was too large to process completely. Here's a summary of what was det
               issueDetails += `🔴 ${issue.originalId} - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
               if (issue.snippet) {
                 const language = getLanguageForFile(issue.file);
-                issueDetails += `- **Code Snippet**:\n\`\`\`${language}\n${issue.snippet}\n\`\`\`\n`;
+                issueDetails += `\`\`\`${language}\n${issue.snippet}\n\`\`\`\n`;
               }
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
               issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
@@ -837,7 +837,7 @@ This chunk was too large to process completely. Here's a summary of what was det
               issueDetails += `🟡 ${issue.originalId} - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
               if (issue.snippet) {
                 const language = getLanguageForFile(issue.file);
-                issueDetails += `- **Code Snippet**:\n\`\`\`${language}\n${issue.snippet}\n\`\`\`\n`;
+                issueDetails += `\`\`\`${language}\n${issue.snippet}\n\`\`\`\n`;
               }
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
               issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
