@@ -3,7 +3,7 @@
 const core = require('@actions/core');
 const github = require('@actions/github');
 const { execSync } = require('child_process');
-const { CONFIG, LLM_PROVIDERS, getReviewPrompt } = require('./constants');
+const { CONFIG, LLM_PROVIDERS, getReviewPrompt, getLanguageForFile } = require('./constants');
 
 /**
  * GitHub Actions Code Reviewer
@@ -813,6 +813,10 @@ This chunk was too large to process completely. Here's a summary of what was det
             issueDetails += `### 🚨 **Critical Issues (${criticalIssues.length})**\n`;
             criticalIssues.forEach(issue => {
               issueDetails += `🔴 ${issue.originalId} - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
+              if (issue.snippet) {
+                const language = getLanguageForFile(issue.file);
+                issueDetails += `- **Code Snippet**:\n\`\`\`${language}\n${issue.snippet}\n\`\`\`\n`;
+              }
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
               issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
               issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
@@ -823,9 +827,6 @@ This chunk was too large to process completely. Here's a summary of what was det
               if (issue.tests) {
                 issueDetails += `- **Test**: ${issue.tests}\n`;
               }
-              if (issue.snippet) {
-                issueDetails += `${issue.snippet}\n`;
-              }
               issueDetails += `\n`;
             });
           }
@@ -834,15 +835,16 @@ This chunk was too large to process completely. Here's a summary of what was det
             issueDetails += `### 💡 **Suggestions (${suggestions.length})**\n`;
             suggestions.forEach(issue => {
               issueDetails += `🟡 ${issue.originalId} - ${issue.category.toUpperCase()} (Chunk ${issue.chunk})\n`;
+              if (issue.snippet) {
+                const language = getLanguageForFile(issue.file);
+                issueDetails += `- **Code Snippet**:\n\`\`\`${language}\n${issue.snippet}\n\`\`\`\n`;
+              }
               issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
               issueDetails += `- **Severity Score**: ${issue.severity_score?.toFixed(1) || 'N/A'}/5.0\n`;
               issueDetails += `- **Confidence**: ${Math.round(issue.confidence * 100)}%\n`;
               issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
               if (issue.fix) {
                 issueDetails += `- **Fix**: ${issue.fix}\n`;
-              }
-              if (issue.snippet) {
-                issueDetails += `${issue.snippet}\n`;
               }
               issueDetails += `\n`;
             });

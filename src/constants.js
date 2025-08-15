@@ -140,31 +140,9 @@ Auto-critical overrides (regardless of score):
 - XSS vulnerabilities through unescaped user input in DOM/HTML
 
 Evidence Requirements (for EACH issue)
-- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters
   (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
-
-Review Dimensions (apply only to what’s visible in the diff)
-
-1) Performance
-- Will this change degrade or improve runtime or render performance?
-- Are there any unnecessary re-renders, memory-heavy operations, or inefficient loops?
-- Is lazy loading, caching, memoization, or virtualization being missed where needed?
-
-2) Security
-- Are there any injection vulnerabilities (XSS, CSRF)?
-- Is untrusted user input handled securely?
-- Are sensitive data and access controls managed properly?
-
-3) Maintainability
-- Is the code clean, modular, and well-structured?
-- Are abstraction levels and logic separation appropriate?
-- Will another engineer be able to understand and modify it without confusion?
-
-4) Best Practices
-- Are modern frontend standards and patterns (e.g., React hooks, component splitting,
-  TypeScript safety, accessibility) followed?
-- Are there code smells, anti-patterns, or obsolete techniques used?
 
 Final Policy
 - final_recommendation = "do_not_merge" if any issue ends up "critical" with confidence ≥ 0.6;
@@ -192,7 +170,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "confidence": 0.0,
       "file": "src/components/Table.tsx",
       "lines": [120, 134],
-      "snippet": "<10-line minimal excerpt>",
+      "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
       "fix": "Specific steps or code patch.",
       "tests": "Brief test to prevent regression.",
@@ -212,6 +190,12 @@ Then add a short human summary:
   • ⚡ Performance issues
   • 🛠️ Maintainability issues
   • 📚 Best Practices issues
+
+Frontend-specific checks (only if visible in diff) 
+- React: unstable hook deps; heavy work in render; missing cleanup in useEffect; dangerouslySetInnerHTML; index-as-key on dynamic lists; consider Suspense/lazy for large modules. 
+- TypeScript: any/unknown leakage; unsafe narrowing; non-null assertions (!). 
+- Fetch/IO: missing abort/timeout; lack of retry/backoff for critical calls; leaking subscriptions/websockets. 
+- Accessibility: critical only if it blocks core flows.
 
 Context: Here are the code changes (diff or full files):
 (paste diff/files here)`,
@@ -249,7 +233,7 @@ Auto-critical overrides (regardless of score)
 - SQL injection vulnerabilities through string concatenation
 
 Evidence Requirements (for EACH issue)
-- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -277,7 +261,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "confidence": 0.0,
       "file": "app/services/user_service.py",
       "lines": [120, 134],
-      "snippet": "<10-line minimal excerpt>",
+      "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
       "fix": "Specific steps or code patch.",
       "tests": "Brief test to prevent regression (e.g., pytest).",
@@ -340,7 +324,7 @@ Auto-critical overrides (regardless of score)
 - XSS vulnerabilities through unescaped user input in responses/templates
 
 Evidence Requirements (for EACH issue)
-- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -368,7 +352,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "confidence": 0.0,
       "file": "src/main/java/com/example/user/UserService.java",
       "lines": [120, 134],
-      "snippet": "<10-line minimal excerpt>",
+      "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
       "fix": "Specific steps or code patch.",
       "tests": "Brief test to prevent regression (e.g., JUnit + MockMvc).",
@@ -434,7 +418,7 @@ Auto-critical overrides (regardless of score)
 - Long-running workers/daemons (queues/Swoole/RoadRunner) leaking memory/resources or unbounded retries.
 
 Evidence Requirements (for EACH issue)
-- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤10 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -462,7 +446,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "confidence": 0.0,
       "file": "app/Http/Controllers/UserController.php",
       "lines": [120, 134],
-      "snippet": "<10-line minimal excerpt>",
+      "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
       "fix": "Specific steps or code patch.",
       "tests": "Brief test to prevent regression (e.g., Pest/PHPUnit feature test).",
@@ -503,9 +487,47 @@ function getReviewPrompt(language) {
   return LANGUAGE_PROMPTS[language] || LANGUAGE_PROMPTS.js; // Default to JS if language not found
 }
 
+ /**
+   * Get language identifier for syntax highlighting based on file extension
+   */
+ function getLanguageForFile(filePath) {
+  if (!filePath) return '';
+  
+  const extension = filePath.split('.').pop().toLowerCase();
+  const languageMap = {
+    'js': 'javascript',
+    'jsx': 'javascript',
+    'ts': 'typescript',
+    'tsx': 'typescript',
+    'py': 'python',
+    'pyw': 'python',
+    'pyx': 'python',
+    'pyi': 'python',
+    'java': 'java',
+    'php': 'php',
+    'html': 'html',
+    'css': 'css',
+    'scss': 'scss',
+    'less': 'less',
+    'json': 'json',
+    'xml': 'xml',
+    'yaml': 'yaml',
+    'yml': 'yaml',
+    'md': 'markdown',
+    'sql': 'sql',
+    'sh': 'bash',
+    'bash': 'bash',
+    'dockerfile': 'dockerfile',
+    'docker': 'dockerfile'
+  };
+  
+  return languageMap[extension] || '';
+}
+
 module.exports = {
   CONFIG,
   LLM_PROVIDERS,
   LANGUAGE_PROMPTS,
-  getReviewPrompt
+  getReviewPrompt,
+  getLanguageForFile
 };
