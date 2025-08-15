@@ -142,6 +142,7 @@ Auto-critical overrides (regardless of score):
 Evidence Requirements (for EACH issue)
 - Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters
   (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- If the \`fix\` field contains code, wrap it inside triple backticks (\`\`\`<lang> ... \`\`\`) so GitHub renders it as a code snippet.
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -172,7 +173,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "lines": [120, 134],
       "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
-      "fix": "Specific steps or code patch.",
+      "fix": "Specific steps or code patch. Wrap in triple backticks if code.",
       "tests": "Brief test to prevent regression.",
       "occurrences": [
         { "file": "src/pages/List.tsx", "lines": [88, 95] }
@@ -198,7 +199,7 @@ Frontend-specific checks (only if visible in diff)
 - Accessibility: critical only if it blocks core flows.
 
 Context: Here are the code changes (diff or full files):
-(paste diff/files here)`,
+`,
 
   python: `Role & Goal
   You are a senior Python engineer (10+ years) reviewing only the provided diff/files for enterprise Python apps (APIs/services/data jobs). Produce a single summary comment (no inline clutter) that highlights critical, hard-to-spot issues across Performance, Security, Maintainability, and Best Practices.
@@ -234,6 +235,7 @@ Auto-critical overrides (regardless of score)
 
 Evidence Requirements (for EACH issue)
 - Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- If the \`fix\` field contains code, wrap it inside triple backticks (\`\`\`<lang> ... \`\`\`) so GitHub renders it as a code snippet.
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -263,7 +265,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "lines": [120, 134],
       "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
-      "fix": "Specific steps or code patch.",
+      "fix": "Specific steps or code patch. Wrap in triple backticks if code.",
       "tests": "Brief test to prevent regression (e.g., pytest).",
       "occurrences": [
         {"file": "app/api/users.py", "lines": [88, 95]}
@@ -325,6 +327,7 @@ Auto-critical overrides (regardless of score)
 
 Evidence Requirements (for EACH issue)
 - Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- If the \`fix\` field contains code, wrap it inside triple backticks (\`\`\`<lang> ... \`\`\`) so GitHub renders it as a code snippet.
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -354,7 +357,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "lines": [120, 134],
       "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
-      "fix": "Specific steps or code patch.",
+      "fix": "Specific steps or code patch. Wrap in triple backticks if code.",
       "tests": "Brief test to prevent regression (e.g., JUnit + MockMvc).",
       "occurrences": [
         {"file": "src/main/java/com/example/api/UserController.java", "lines": [88, 95]}
@@ -419,6 +422,7 @@ Auto-critical overrides (regardless of score)
 
 Evidence Requirements (for EACH issue)
 - Provide: file (relative path), lines ([start,end]), a minimal snippet (≤15 lines), why_it_matters (1 sentence), fix (concise, code if helpful), tests (brief test), confidence ∈ [0,1].
+- If the \`fix\` field contains code, wrap it inside triple backticks (\`\`\`<lang> ... \`\`\`) so GitHub renders it as a code snippet.
 - Deduplicate repeated patterns: one issue with an "occurrences" array of {file, lines}.
 
 Final Policy
@@ -448,7 +452,7 @@ Return THIS JSON object followed by a brief human-readable summary:
       "lines": [120, 134],
       "snippet": "<15-line minimal excerpt>",
       "why_it_matters": "Concrete impact in 1 sentence.",
-      "fix": "Specific steps or code patch.",
+      "fix": "Specific steps or code patch. Wrap in triple backticks if code.",
       "tests": "Brief test to prevent regression (e.g., Pest/PHPUnit feature test).",
       "occurrences": [
         {"file": "resources/views/users/index.blade.php", "lines": [88, 95]}
