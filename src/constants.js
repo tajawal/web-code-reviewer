@@ -128,6 +128,8 @@ Determinism & Output Contract
 - CRITICAL: Be deterministic. For identical code inputs, produce identical outputs.
 - Use consistent issue IDs: SEC-01, SEC-02, PERF-01, PERF-02, MAINT-01, MAINT-02, BEST-01, BEST-02.
 - Apply the same severity scoring algorithm consistently across all issues.
+- ALWAYS mark API keys, secrets, or credentials as CRITICAL regardless of other factors.
+- IMPORTANT: Always analyze the code thoroughly and report any issues found. Do not skip analysis.
 - If no issues found, return empty issues array with summary indicating "No issues detected".
 `,
   // Common scope and exclusions
@@ -218,8 +220,8 @@ Emit EXACTLY this JSON schema inside <JSON> … </JSON>, then a short human summ
 </SUMMARY>`,
 
   // Common context
-  context: (diffHash) => `Context: Here are the code changes (diff or full files):
-Deterministic Seed: ${diffHash || 'no-hash'}`
+  context: (diffHash) => `Review ID: ${diffHash || 'default'}
+  Context: Here are the code changes (diff or full files):`
 };
 
 /**

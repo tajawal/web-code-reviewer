@@ -942,7 +942,7 @@ This chunk was too large to process completely. Here's a summary of what was det
   /**
    * Prepare review data for logging
    */
-  prepareReviewLogData(shouldBlockMerge, changedFiles, llmResponse) {
+  prepareReviewLogData(shouldBlockMerge, changedFiles, llmResponse, fullDiff) {
     try {
       // Extract issues from LLM response
       const extractedData = this.extractIssuesFromResponse(llmResponse);
@@ -993,7 +993,7 @@ This chunk was too large to process completely. Here's a summary of what was det
         merge_blocked: shouldBlockMerge,
         language: this.language,
         provider: this.provider,
-        diff_hash: this.generateDiffHash(fullDiff),
+        diff_hash: fullDiff ? this.generateDiffHash(fullDiff) : 'no-diff',
         consistency_version: '1.11.0'
       };
     }
@@ -1346,7 +1346,7 @@ ${shouldBlockMerge
       await this.addPRComment(prComment);
       
       // Log review data to external endpoint (non-blocking)
-      const reviewData = this.prepareReviewLogData(shouldBlockMerge, changedFiles, llmResponse);
+      const reviewData = this.prepareReviewLogData(shouldBlockMerge, changedFiles, llmResponse, fullDiff);
       this.logReviewData(reviewData);
       
       this.logFinalDecision(shouldBlockMerge, llmResponse);

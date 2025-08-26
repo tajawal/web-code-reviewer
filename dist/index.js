@@ -30056,6 +30056,8 @@ Determinism & Output Contract
 - CRITICAL: Be deterministic. For identical code inputs, produce identical outputs.
 - Use consistent issue IDs: SEC-01, SEC-02, PERF-01, PERF-02, MAINT-01, MAINT-02, BEST-01, BEST-02.
 - Apply the same severity scoring algorithm consistently across all issues.
+- ALWAYS mark API keys, secrets, or credentials as CRITICAL regardless of other factors.
+- IMPORTANT: Always analyze the code thoroughly and report any issues found. Do not skip analysis.
 - If no issues found, return empty issues array with summary indicating "No issues detected".
 `,
   // Common scope and exclusions
@@ -30146,8 +30148,8 @@ Emit EXACTLY this JSON schema inside <JSON> … </JSON>, then a short human summ
 </SUMMARY>`,
 
   // Common context
-  context: (diffHash) => `Context: Here are the code changes (diff or full files):
-Deterministic Seed: ${diffHash || 'no-hash'}`
+  context: (diffHash) => `Review ID: ${diffHash || 'default'}
+  Context: Here are the code changes (diff or full files):`
 };
 
 /**
@@ -33388,7 +33390,7 @@ This chunk was too large to process completely. Here's a summary of what was det
   /**
    * Prepare review data for logging
    */
-  prepareReviewLogData(shouldBlockMerge, changedFiles, llmResponse) {
+  prepareReviewLogData(shouldBlockMerge, changedFiles, llmResponse, fullDiff) {
     try {
       // Extract issues from LLM response
       const extractedData = this.extractIssuesFromResponse(llmResponse);
@@ -33439,7 +33441,7 @@ This chunk was too large to process completely. Here's a summary of what was det
         merge_blocked: shouldBlockMerge,
         language: this.language,
         provider: this.provider,
-        diff_hash: this.generateDiffHash(fullDiff),
+        diff_hash: fullDiff ? this.generateDiffHash(fullDiff) : 'no-diff',
         consistency_version: '1.11.0'
       };
     }
@@ -33792,7 +33794,7 @@ ${shouldBlockMerge
       await this.addPRComment(prComment);
       
       // Log review data to external endpoint (non-blocking)
-      const reviewData = this.prepareReviewLogData(shouldBlockMerge, changedFiles, llmResponse);
+      const reviewData = this.prepareReviewLogData(shouldBlockMerge, changedFiles, llmResponse, fullDiff);
       this.logReviewData(reviewData);
       
       this.logFinalDecision(shouldBlockMerge, llmResponse);
