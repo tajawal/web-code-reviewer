@@ -232,7 +232,7 @@ const LANGUAGE_CRITICAL_OVERRIDES = {
 - window.postMessage with "*" targetOrigin or without strict origin checks.
 - <a target="_blank"> to user-influenced URL without rel="noopener noreferrer".
 - Dynamic code execution with untrusted input (eval, new Function, VM).
-- Secrets/credentials/API tokens embedded in client code or shipped to browser.
+- API keys, secrets, or credentials embedded in client code (patterns: api_key, apiKey, access_token, secret, password, private_key, client_secret, bearer_token, authorization, x-api-key, api-token, jwt_token, session_token, auth_token, oauth_token, refresh_token, stripe_key, firebase_key, aws_key, google_key, azure_key, github_token, gitlab_token, bitbucket_token, slack_token, discord_token, telegram_token, twilio_key, sendgrid_key, mailgun_key, pusher_key, algolia_key, mapbox_key, weather_api_key, news_api_key, youtube_api_key, twitter_api_key, facebook_token, instagram_token, linkedin_token, paypal_key, square_key, braintree_key, stripe_secret, firebase_secret, aws_secret, google_secret, azure_secret, github_secret, gitlab_secret, bitbucket_secret, slack_secret, discord_secret, telegram_secret, twilio_secret, sendgrid_secret, mailgun_secret, pusher_secret, algolia_secret, mapbox_secret, weather_api_secret, news_api_secret, youtube_api_secret, twitter_api_secret, facebook_secret, instagram_secret, linkedin_secret, paypal_secret, square_secret, braintree_secret).
 - Token/session persistence in localStorage/sessionStorage when any XSS sink exists.
 - Unbounded listeners/intervals/timeouts or render-time loops causing growth/leak.
 - URL.createObjectURL used with untrusted blobs without revocation/validation.
@@ -250,7 +250,7 @@ const LANGUAGE_CRITICAL_OVERRIDES = {
 - CSRF disabled/missing for state-changing endpoints (web apps).
 - Path traversal in file I/O without canonicalization/validation.
 - Weak crypto (MD5/SHA1 for passwords; DES/ECB; hardcoded keys/seeds).
-- Secrets/credentials embedded in code or .py files.
+- API keys, secrets, or credentials embedded in code (patterns: api_key, apiKey, access_token, secret, password, private_key, client_secret, bearer_token, authorization, x_api_key, api_token, jwt_token, session_token, auth_token, oauth_token, refresh_token, stripe_key, firebase_key, aws_key, google_key, azure_key, github_token, gitlab_token, bitbucket_token, slack_token, discord_token, telegram_token, twilio_key, sendgrid_key, mailgun_key, pusher_key, algolia_key, mapbox_key, weather_api_key, news_api_key, youtube_api_key, twitter_api_key, facebook_token, instagram_token, linkedin_token, paypal_key, square_key, braintree_key, stripe_secret, firebase_secret, aws_secret, google_secret, azure_secret, github_secret, gitlab_secret, bitbucket_secret, slack_secret, discord_secret, telegram_secret, twilio_secret, sendgrid_secret, mailgun_secret, pusher_secret, algolia_secret, mapbox_secret, weather_api_secret, news_api_secret, youtube_api_secret, twitter_api_secret, facebook_secret, instagram_secret, linkedin_secret, paypal_secret, square_secret, braintree_secret, database_url, redis_url, mongodb_url, postgres_url, mysql_url, sqlite_url, elasticsearch_url, rabbitmq_url, kafka_url, redis_password, mongodb_password, postgres_password, mysql_password, elasticsearch_password, rabbitmq_password, kafka_password).
 - Unbounded threads/async tasks/loops causing memory/CPU leak or DoS.`,
 
   java: `Auto-critical overrides (regardless of score)
@@ -264,6 +264,7 @@ const LANGUAGE_CRITICAL_OVERRIDES = {
 - XSS/HTML injection in server-side rendered responses due to missing escaping.
 - CSRF disabled for state-changing endpoints without compensating controls.
 - Weak crypto (MD5/SHA1 for passwords, DES/ECB, hardcoded keys/seeds).
+- API keys, secrets, or credentials embedded in code (patterns: apiKey, api_key, accessToken, secret, password, privateKey, clientSecret, bearerToken, authorization, xApiKey, apiToken, jwtToken, sessionToken, authToken, oauthToken, refreshToken, stripeKey, firebaseKey, awsKey, googleKey, azureKey, githubToken, gitlabToken, bitbucketToken, slackToken, discordToken, telegramToken, twilioKey, sendgridKey, mailgunKey, pusherKey, algoliaKey, mapboxKey, weatherApiKey, newsApiKey, youtubeApiKey, twitterApiKey, facebookToken, instagramToken, linkedinToken, paypalKey, squareKey, braintreeKey, stripeSecret, firebaseSecret, awsSecret, googleSecret, azureSecret, githubSecret, gitlabSecret, bitbucketSecret, slackSecret, discordSecret, telegramSecret, twilioSecret, sendgridSecret, mailgunSecret, pusherSecret, algoliaSecret, mapboxSecret, weatherApiSecret, newsApiSecret, youtubeApiSecret, twitterApiSecret, facebookSecret, instagramSecret, linkedinSecret, paypalSecret, squareSecret, braintreeSecret, databaseUrl, redisUrl, mongodbUrl, postgresUrl, mysqlUrl, elasticsearchUrl, rabbitmqUrl, kafkaUrl, redisPassword, mongodbPassword, postgresPassword, mysqlPassword, elasticsearchPassword, rabbitmqPassword, kafkaPassword).
 - Unbounded threads/executors/schedulers causing memory/CPU leak or DoS.`,
 
   php: `Auto-critical overrides (regardless of score)
@@ -278,7 +279,7 @@ const LANGUAGE_CRITICAL_OVERRIDES = {
 - CSRF middleware disabled or missing on state-changing routes.
 - Weak session config (missing HttpOnly/Secure/SameSite; session fixation).
 - Path traversal in file operations without sanitization.
-- Secrets/credentials in code or committed configs.`
+- API keys, secrets, or credentials embedded in code (patterns: api_key, apiKey, access_token, secret, password, private_key, client_secret, bearer_token, authorization, x_api_key, api_token, jwt_token, session_token, auth_token, oauth_token, refresh_token, stripe_key, firebase_key, aws_key, google_key, azure_key, github_token, gitlab_token, bitbucket_token, slack_token, discord_token, telegram_token, twilio_key, sendgrid_key, mailgun_key, pusher_key, algolia_key, mapbox_key, weather_api_key, news_api_key, youtube_api_key, twitter_api_key, facebook_token, instagram_token, linkedin_token, paypal_key, square_key, braintree_key, stripe_secret, firebase_secret, aws_secret, google_secret, azure_secret, github_secret, gitlab_secret, bitbucket_secret, slack_secret, discord_secret, telegram_secret, twilio_secret, sendgrid_secret, mailgun_secret, pusher_secret, algolia_secret, mapbox_secret, weather_api_secret, news_api_secret, youtube_api_secret, twitter_api_secret, facebook_secret, instagram_secret, linkedin_secret, paypal_secret, square_secret, braintree_secret, database_url, redis_url, mongodb_url, postgres_url, mysql_url, elasticsearch_url, rabbitmq_url, kafka_url, redis_password, mongodb_password, postgres_password, mysql_password, elasticsearch_password, rabbitmq_password, kafka_password).`
 };
 
 /**
