@@ -21,6 +21,8 @@ const CONFIG = {
   POST_REVIEW_LABEL: 'deep review completed', // Label to add after code review
   POST_REVIEW_LABEL_COLOR: '0366d6', // GitHub blue color
   POST_REVIEW_LABEL_DESCRIPTION: 'Pull request has been reviewed by AI code reviewer',
+  // Consistency configuration
+  ENABLE_CONSISTENCY_MEASURES: true, // Enable deterministic hashing and consistency checks
   APPROVAL_PHRASES: [
     'safe to merge', '✅ safe to merge', 'merge approved', 
     'no critical issues', 'safe to commit', 'approved for merge',
@@ -123,6 +125,10 @@ Determinism & Output Contract
 - Do NOT wrap JSON in markdown/code fences. No commentary outside these tags.
 - If the JSON would be invalid, immediately re-emit a corrected JSON object (no explanations).
 - Maximum 10 issues. Sort by severity_score (desc). Use 1-based, inclusive line numbers. Round severity_score to 2 decimals.
+- CRITICAL: Be deterministic. For identical code inputs, produce identical outputs.
+- Use consistent issue IDs: SEC-01, SEC-02, PERF-01, PERF-02, MAINT-01, MAINT-02, BEST-01, BEST-02.
+- Apply the same severity scoring algorithm consistently across all issues.
+- If no issues found, return empty issues array with summary indicating "No issues detected".
 `,
   // Common scope and exclusions
   scopeAndExclusions: `Scope & Exclusions (very important)
@@ -132,14 +138,23 @@ Determinism & Output Contract
 
   // Common severity scoring
   severityScoring: `Severity Scoring (mandatory)
-For EACH issue, assign 0–5 scores:
-- impact, exploitability, likelihood, blast_radius, evidence_strength
-Compute:
+For EACH issue, assign 0–5 scores using these EXACT criteria:
+- impact: 0=none, 1=low, 2=medium, 3=high, 4=severe, 5=critical
+- exploitability: 0=impossible, 1=very hard, 2=hard, 3=moderate, 4=easy, 5=trivial
+- likelihood: 0=never, 1=rare, 2=unlikely, 3=possible, 4=likely, 5=certain
+- blast_radius: 0=none, 1=local, 2=component, 3=module, 4=system, 5=entire app
+- evidence_strength: 0=none, 1=weak, 2=moderate, 3=strong, 4=very strong, 5=conclusive
+
+Compute EXACTLY:
 severity_score = 0.35*impact + 0.30*exploitability + 0.20*likelihood + 0.10*blast_radius + 0.05*evidence_strength
-Set severity_proposed:
+
+Set severity_proposed using EXACT thresholds:
 - "critical" if severity_score ≥ 3.60 AND evidence_strength ≥ 3
 - otherwise "suggestion"
-Add "risk_factors_notes": one short line per factor explaining the anchor (e.g., "exploitability=5: unescaped input flows to innerHTML").`,
+
+Add "risk_factors_notes": one short line per factor explaining the anchor (e.g., "exploitability=5: unescaped input flows to innerHTML").
+
+CRITICAL: Apply these exact same criteria and thresholds to identical code patterns.`,
 
   // Common evidence requirements
   evidenceRequirements: `Evidence Requirements (for EACH issue)
@@ -203,7 +218,8 @@ Emit EXACTLY this JSON schema inside <JSON> … </JSON>, then a short human summ
 </SUMMARY>`,
 
   // Common context
-  context: `Context: Here are the code changes (diff or full files):`
+  context: (diffHash) => `Context: Here are the code changes (diff or full files):
+Deterministic Seed: ${diffHash || 'no-hash'}`
 };
 
 /**
@@ -329,7 +345,7 @@ const LANGUAGE_CONFIGS = {
 /**
  * Build complete prompt for a specific language
  */
-function buildLanguagePrompt(language) {
+function buildLanguagePrompt(language, diffHash = null) {
   const config = LANGUAGE_CONFIGS[language];
   if (!config) {
     throw new Error(`Unsupported language: ${language}`);
@@ -353,7 +369,7 @@ ${SHARED_PROMPT_COMPONENTS.finalPolicy}
 
 ${SHARED_PROMPT_COMPONENTS.outputFormat(config.testExample, config.fileExample)}
 
-${SHARED_PROMPT_COMPONENTS.context}`;
+${SHARED_PROMPT_COMPONENTS.context(diffHash)}`;
 }
 
 /**
@@ -369,8 +385,8 @@ const LANGUAGE_PROMPTS = {
 /**
  * Get review prompt for specific language
  */
-function getReviewPrompt(language) {
-  return LANGUAGE_PROMPTS[language] || LANGUAGE_PROMPTS.js; // Default to JS if language not found
+function getReviewPrompt(language, diffHash = null) {
+  return buildLanguagePrompt(language, diffHash) || buildLanguagePrompt('js', diffHash); // Default to JS if language not found
 }
 
  /**

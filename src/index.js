@@ -3,6 +3,7 @@
 const core = require('@actions/core');
 const github = require('@actions/github');
 const { execSync } = require('child_process');
+const crypto = require('crypto');
 const { CONFIG, LLM_PROVIDERS, getReviewPrompt, getLanguageForFile } = require('./constants');
 
 /**
@@ -227,6 +228,19 @@ class GitHubActionsReviewer {
     }
     
     return chunks;
+  }
+
+  /**
+   * Generate a deterministic hash for the diff content
+   */
+  generateDiffHash(diff) {
+    if (!diff || diff.length === 0) {
+      return 'empty-diff';
+    }
+    
+    // Create a hash of the diff content for deterministic prompts
+    const hash = crypto.createHash('sha256').update(diff).digest('hex');
+    return hash.substring(0, 16); // Use first 16 characters for brevity
   }
 
   /**
@@ -958,7 +972,9 @@ This chunk was too large to process completely. Here's a summary of what was det
         pr_number: (this.context.issue && this.context.issue.number) || null,
         merge_blocked: shouldBlockMerge,
         language: this.language,
-        provider: this.provider
+        provider: this.provider,
+        diff_hash: this.generateDiffHash(fullDiff),
+        consistency_version: '1.11.0'
       };
 
       return reviewData;
@@ -976,7 +992,9 @@ This chunk was too large to process completely. Here's a summary of what was det
         pr_number: null,
         merge_blocked: shouldBlockMerge,
         language: this.language,
-        provider: this.provider
+        provider: this.provider,
+        diff_hash: this.generateDiffHash(fullDiff),
+        consistency_version: '1.11.0'
       };
     }
   }
@@ -1295,11 +1313,28 @@ ${shouldBlockMerge
     // LLM Review
     core.info(`🤖 Running LLM Review of branch changes...\n`);
     
-    // Get language-specific review prompt
-    const reviewPrompt = getReviewPrompt(this.language);
-    core.info(`📝 Using ${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || this.language} review prompt`);
-      
     const fullDiff = this.getFullDiff();
+    
+                // Generate deterministic hash for consistent prompts (if enabled)
+      let diffHash = null;
+      if (CONFIG.ENABLE_CONSISTENCY_MEASURES) {
+        diffHash = this.generateDiffHash(fullDiff);
+        core.info(`🔐 Using deterministic hash: ${diffHash} for consistent results`);
+        
+        // Log consistency information
+        core.info(`📊 Consistency measures enabled:`);
+        core.info(`  - Temperature: ${CONFIG.TEMPERATURE} (deterministic)`);
+        core.info(`  - Diff Hash: ${diffHash}`);
+        core.info(`  - Provider: ${this.provider}`);
+        core.info(`  - Model: ${LLM_PROVIDERS[this.provider].model}`);
+      } else {
+        core.info(`⚠️  Consistency measures disabled - results may vary between runs`);
+      }
+    
+      // Get language-specific review prompt with hash
+      const reviewPrompt = getReviewPrompt(this.language, diffHash);
+    core.info(`📝 Using ${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || this.language} review prompt`);
+    
     const llmResponse = await this.callLLM(reviewPrompt, fullDiff);
     
     if (this.logLLMResponse(llmResponse)) {
