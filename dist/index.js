@@ -30050,9 +30050,10 @@ Determinism & Output Contract
   2) <SUMMARY>…a brief human summary (≤6 bullets)…</SUMMARY>
 - Do NOT wrap JSON in markdown/code fences. No commentary outside these tags.
 - If the JSON would be invalid, immediately re-emit a corrected JSON object (no explanations).
-- Maximum 10 issues. Sort by severity_score (desc). Use 1-based, inclusive line numbers. Round severity_score to 2 decimals.
+- Maximum 10 issues. Sort by deterministic rules (see addendum).
+- Use 1-based, inclusive line numbers. 
 - CRITICAL: Be deterministic. For identical code inputs, produce identical outputs.
-- Use consistent issue IDs: SEC-01, SEC-02, PERF-01, PERF-02, MAINT-01, MAINT-02, BEST-01, BEST-02.
+- Use consistent, stable IDs (see addendum).
 - Apply the same severity scoring algorithm consistently across all issues.
 `,
   // Common scope and exclusions
@@ -30091,6 +30092,17 @@ CRITICAL: Apply these exact same criteria and thresholds to identical code patte
   finalPolicy: `Final Policy
 - final_recommendation = "do_not_merge" if any issue is "critical" with confidence ≥ 0.6; else "safe_to_merge".`,
 
+deterministicRules: `Determinism Addendum (mandatory)
+- Input order neutrality: Treat the order of files/chunks as arbitrary. Do not infer priority from sequence. Evaluate each file independently.
+- Sorting & selection: Stable order: severity_score (desc) → category priority (security > performance > maintainability > best_practices) → file path (asc) → start line (asc) → rule_id (asc). If >10 issues, keep the first 10 after applying this stable sort.
+- Stable IDs: Derive from SHA256(\`\${category}||\${file}||\${lines[0]}-\${lines[1]}||\${normalized_snippet}\`), truncated to 6 hex chars. Prefix with SEC-/PERF-/MAINT-/BEST- by category.
+- Number formatting: severity_score and confidence always with exactly 2 decimals (round half up). risk_factors.* are integers.
+- Snippet policy: ≤12 lines centered on risky call. If multiple calls exist, pick the one with highest impact; else earliest line. Use 1-based inclusive line numbers.
+- Deduplication: Two issues are duplicates if category, file, line span, and normalized_snippet match. Keep one; list others under "occurrences".
+- Overflow/drop: If token limits force omission, drop lowest severity first; then by lowest category priority; then by file path (descending); then by start line (descending). Report dropped items under "metrics.dropped_count".
+- Schema invariants: Always emit all fields, even zero/empty. Do not add extra keys. Do not reorder top-level keys.
+- Language/style: <SUMMARY> must be ≤6 bullets, evidence-based, no hedging language.`,
+
   // Common output format
   outputFormat: (testExample, fileExample) => `Output Format
 Emit EXACTLY this JSON schema inside <JSON> … </JSON>, then a short human summary inside <SUMMARY> … </SUMMARY>:
@@ -30100,7 +30112,8 @@ Emit EXACTLY this JSON schema inside <JSON> … </JSON>, then a short human summ
   "summary": "1–3 sentences overall assessment.",
   "issues": [
     {
-      "id": "SEC-01",
+      "id": "SEC-1a2b3c",
+      "rule_id": "xss.innerHTML",
       "category": "security|performance|maintainability|best_practices",
       "severity_proposed": "critical|suggestion",
       "severity_score": 0.00,
@@ -30129,7 +30142,8 @@ Emit EXACTLY this JSON schema inside <JSON> … </JSON>, then a short human summ
     "critical_count": 0,
     "suggestion_count": 0,
     "by_category": { "security": 0, "performance": 0, "maintainability": 0, "best_practices": 0 },
-    "auto_critical_hits": 0
+    "auto_critical_hits": 0,
+    "dropped_count": 0
   },
   "final_recommendation": "safe_to_merge|do_not_merge"
 }
@@ -32562,7 +32576,41 @@ class GitHubActionsReviewer {
   }
 
   /**
-   * Get changed files from git diff with language filtering
+   * Get first changed line number from git diff
+   */
+  getFirstChangedLine(filePath) {
+    try {
+      const diff = this.getFileDiff(filePath);
+      if (!diff) {
+        return 999999; // Default to high number if no diff
+      }
+
+      // Extract first changed line number from git diff @@ markers
+      const lineMatch = diff.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/m);
+      return lineMatch ? parseInt(lineMatch[1]) : 999999;
+    } catch (error) {
+      core.warning(`⚠️  Error getting first changed line for ${filePath}: ${error.message}`);
+      return 999999;
+    }
+  }
+
+  /**
+   * Sort files by path and first changed line
+   */
+  sortFilesByPathAndLine(files) {
+    return files.sort((a, b) => {
+      // First sort by path (lexicographically)
+      if (a.path !== b.path) {
+        return a.path.localeCompare(b.path);
+      }
+      
+      // If paths are equal, sort by first changed line
+      return a.firstChangedLine - b.firstChangedLine;
+    });
+  }
+
+  /**
+   * Get changed files from git diff with language filtering and sorting
    */
   getChangedFiles() {
     try {
@@ -32571,7 +32619,7 @@ class GitHubActionsReviewer {
       core.info(`🔤 Language filter: ${this.language} (${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || 'Unknown'})`);
       
       const rawOutput = execSync(`git diff --name-only origin/${this.baseBranch}...HEAD`, { encoding: 'utf8' });
-      const allFiles = rawOutput
+      const filteredFiles = rawOutput
         .split('\n')
         .filter(Boolean) // Remove empty lines
         .filter(file => {
@@ -32586,10 +32634,31 @@ class GitHubActionsReviewer {
           
           return matchesPath && !shouldIgnore && matchesLanguage;
         });
+
+      core.info(`Found ${filteredFiles.length} changed files matching language: ${this.language}`);
       
-      core.info(`Found ${allFiles.length} changed files matching language: ${this.language}`);
+      if (filteredFiles.length === 0) {
+        return [];
+      }
+
+      // Get metadata for sorting (path and first changed line)
+      core.info('📊 Extracting file metadata for sorting...');
+      const filesWithMetadata = filteredFiles.map(file => ({
+        path: file,
+        firstChangedLine: this.getFirstChangedLine(file)
+      }));
       
-      return allFiles;
+      // Sort files by path and first changed line
+      const sortedFiles = this.sortFilesByPathAndLine(filesWithMetadata);
+      
+      // Log the sorting order for transparency
+      core.info('📁 File sorting order:');
+      sortedFiles.forEach((file, index) => {
+        core.info(`  ${index + 1}. ${file.path} (line: ${file.firstChangedLine})`);
+      });
+      
+      // Return just the file paths in sorted order
+      return sortedFiles.map(file => file.path);
     } catch (error) {
       core.error(`❌ Error getting changed files: ${error.message}`);
       return [];

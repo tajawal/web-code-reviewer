@@ -116,7 +116,41 @@ class GitHubActionsReviewer {
   }
 
   /**
-   * Get changed files from git diff with language filtering
+   * Get first changed line number from git diff
+   */
+  getFirstChangedLine(filePath) {
+    try {
+      const diff = this.getFileDiff(filePath);
+      if (!diff) {
+        return 999999; // Default to high number if no diff
+      }
+
+      // Extract first changed line number from git diff @@ markers
+      const lineMatch = diff.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/m);
+      return lineMatch ? parseInt(lineMatch[1]) : 999999;
+    } catch (error) {
+      core.warning(`⚠️  Error getting first changed line for ${filePath}: ${error.message}`);
+      return 999999;
+    }
+  }
+
+  /**
+   * Sort files by path and first changed line
+   */
+  sortFilesByPathAndLine(files) {
+    return files.sort((a, b) => {
+      // First sort by path (lexicographically)
+      if (a.path !== b.path) {
+        return a.path.localeCompare(b.path);
+      }
+      
+      // If paths are equal, sort by first changed line
+      return a.firstChangedLine - b.firstChangedLine;
+    });
+  }
+
+  /**
+   * Get changed files from git diff with language filtering and sorting
    */
   getChangedFiles() {
     try {
@@ -125,7 +159,7 @@ class GitHubActionsReviewer {
       core.info(`🔤 Language filter: ${this.language} (${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || 'Unknown'})`);
       
       const rawOutput = execSync(`git diff --name-only origin/${this.baseBranch}...HEAD`, { encoding: 'utf8' });
-      const allFiles = rawOutput
+      const filteredFiles = rawOutput
         .split('\n')
         .filter(Boolean) // Remove empty lines
         .filter(file => {
@@ -140,10 +174,31 @@ class GitHubActionsReviewer {
           
           return matchesPath && !shouldIgnore && matchesLanguage;
         });
+
+      core.info(`Found ${filteredFiles.length} changed files matching language: ${this.language}`);
       
-      core.info(`Found ${allFiles.length} changed files matching language: ${this.language}`);
+      if (filteredFiles.length === 0) {
+        return [];
+      }
+
+      // Get metadata for sorting (path and first changed line)
+      core.info('📊 Extracting file metadata for sorting...');
+      const filesWithMetadata = filteredFiles.map(file => ({
+        path: file,
+        firstChangedLine: this.getFirstChangedLine(file)
+      }));
       
-      return allFiles;
+      // Sort files by path and first changed line
+      const sortedFiles = this.sortFilesByPathAndLine(filesWithMetadata);
+      
+      // Log the sorting order for transparency
+      core.info('📁 File sorting order:');
+      sortedFiles.forEach((file, index) => {
+        core.info(`  ${index + 1}. ${file.path} (line: ${file.firstChangedLine})`);
+      });
+      
+      // Return just the file paths in sorted order
+      return sortedFiles.map(file => file.path);
     } catch (error) {
       core.error(`❌ Error getting changed files: ${error.message}`);
       return [];
