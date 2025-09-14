@@ -264,6 +264,8 @@ Auto-critical items:
 - File inclusion (RFI/LFI) from user input. Fix: strict allowlists; no dynamic includes.
 - Path traversal in file I/O. Fix: realpath/canonicalize + base dir allowlist.
 - Insecure deserialization via unserialize on untrusted input. Fix: avoid; use JSON + schema.
+- Type confusion via unfiltered user input to sensitive functions (array_merge, extract, $$variable). Anchor: call site with user data. Fix: strict input validation; avoid variable variables.
+- PHP object injection via phar:// wrapper with user-controlled paths. Anchor: file operation with phar://. Fix: disable phar in stream wrappers; validate file paths.
 - CSRF missing on state-changing routes. Fix: CSRF tokens/middleware.
 - Weak password hashing/crypto (md5/sha1, mcrypt ECB). Fix: password_hash (Bcrypt/Argon2), libsodium.
 - Hardcoded secrets/API keys/credentials in code. Fix: env/secret manager; rotate keys.
