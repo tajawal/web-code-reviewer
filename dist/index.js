@@ -30674,6 +30674,8 @@ Auto-critical items:
 - File inclusion (RFI/LFI) from user input. Fix: strict allowlists; no dynamic includes.
 - Path traversal in file I/O. Fix: realpath/canonicalize + base dir allowlist.
 - Insecure deserialization via unserialize on untrusted input. Fix: avoid; use JSON + schema.
+- Type confusion via unfiltered user input to sensitive functions (array_merge, extract, $$variable). Anchor: call site with user data. Fix: strict input validation; avoid variable variables.
+- PHP object injection via phar:// wrapper with user-controlled paths. Anchor: file operation with phar://. Fix: disable phar in stream wrappers; validate file paths.
 - CSRF missing on state-changing routes. Fix: CSRF tokens/middleware.
 - Weak password hashing/crypto (md5/sha1, mcrypt ECB). Fix: password_hash (Bcrypt/Argon2), libsodium.
 - Hardcoded secrets/API keys/credentials in code. Fix: env/secret manager; rotate keys.
@@ -35876,7 +35878,7 @@ module.exports = parseParams
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.21","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","node-fetch":"^3.3.2"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
+module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.22","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","node-fetch":"^3.3.2"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
 
 /***/ })
 
@@ -36018,7 +36020,7 @@ const LoggingService = __nccwpck_require__(8689);
 
 // Version information - updated during build process
 const VERSION_INFO = {
-  version: '1.14.21',
+  version: '1.14.22',
   name: 'web-code-reviewer',
   description: 'Automated code review using LLM (Claude/OpenAI) for GitHub PRs'
 };
