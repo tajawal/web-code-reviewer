@@ -15,6 +15,18 @@ A GitHub Action that performs automated code reviews using Large Language Models
 - **📈 External Logging**: Non-blocking analytics logging to external endpoints for monitoring and insights
 - **🏗️ Modular Architecture**: Centralized JSON parsing and reusable components for maintainability
 
+## 🧠 LLM Context
+
+DeepReview provides comprehensive context to the LLM for accurate analysis:
+
+- **📝 Changed Files**: Full diff content with syntax highlighting
+- **📦 Dependencies**: Package.json, lock files, and project type
+- **🔗 Imported Files**: Key exports from files imported by changed code (max 12 files, 8 lines each)
+- **🏗️ File Relationships**: Import/export patterns and project structure
+- **📊 Recent Commits**: Commit history for context understanding
+
+**Smart Filtering**: Only includes relevant dependencies, prioritizes by usage frequency, and optimizes for token limits to prevent context pollution.
+
 ## 🚀 Quick Start
 
 ### Required Environment Variables
