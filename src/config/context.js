@@ -19,6 +19,7 @@ const CONTEXT_CONFIG = {
   ENABLE_DEPENDENCIES: true,
   ENABLE_COMMIT_HISTORY: true,
   ENABLE_FILE_RELATIONSHIPS: true,
+  ENABLE_FIRST_LEVEL_DEPENDENCIES: true,
 
   // File patterns to exclude from context
   EXCLUDE_PATTERNS: [
@@ -37,7 +38,12 @@ const CONTEXT_CONFIG = {
   INCLUDE_EXTENSIONS: ['.js', '.ts', '.tsx', '.jsx', '.vue', '.svelte', '.json', '.md'],
 
   // Context priority (order matters)
-  CONTEXT_PRIORITY: ['dependencies', 'project_structure', 'file_relationships', 'commit_history']
+  CONTEXT_PRIORITY: ['dependencies', 'project_structure', 'file_relationships', 'commit_history'],
+
+  // First-level dependency context limits
+  MAX_DEPENDENCY_FILES: 12, // Maximum number of dependency files to include
+  MAX_DEPENDENCY_CONTEXT_LINES: 8, // Maximum lines of context per dependency file
+  MIN_DEPENDENCY_USAGE_COUNT: 1 // Minimum number of changed files that must import a dependency
 };
 
 module.exports = CONTEXT_CONFIG;

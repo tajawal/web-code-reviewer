@@ -92,9 +92,9 @@ class ContextService {
   }
 
   /**
-   * Get dependency context (package.json, imports)
+   * Get dependency context (package.json, imports, and first-level dependencies)
    */
-  getDependencyContext() {
+  getDependencyContext(changedFiles = []) {
     if (!CONTEXT_CONFIG.ENABLE_DEPENDENCIES) {
       return '';
     }
@@ -126,6 +126,18 @@ class ContextService {
           }
         } catch {
           // No lock file found
+        }
+
+        // Get first-level dependency context for changed files
+        if (
+          changedFiles &&
+          changedFiles.length > 0 &&
+          CONTEXT_CONFIG.ENABLE_FIRST_LEVEL_DEPENDENCIES
+        ) {
+          const dependencyContext = this.getFirstLevelDependencyContext(changedFiles);
+          if (dependencyContext) {
+            context += '\n' + dependencyContext;
+          }
         }
 
         context += '\n--- End Dependencies ---\n';
@@ -295,7 +307,7 @@ class ContextService {
     const contextPromises = [
       this.getSemanticCodeContext(changedFiles),
       this.getFileRelationshipsContext(changedFiles),
-      this.getDependencyContext(),
+      this.getDependencyContext(changedFiles),
       this.getRecentCommitContext()
     ];
 
@@ -779,6 +791,282 @@ class ContextService {
     }
 
     return sample.join('\n');
+  }
+
+  /**
+   * Get first-level dependency context for changed files
+   * Only includes the most relevant dependencies with strict filtering
+   */
+  getFirstLevelDependencyContext(changedFiles) {
+    try {
+      const dependencyFiles = new Set();
+      const dependencyMap = new Map(); // Track how many files depend on each dependency
+
+      // Extract dependencies from each changed file
+      for (const changedFile of changedFiles) {
+        try {
+          const fileDependencies = this.extractFileDependencies(changedFile);
+          fileDependencies.forEach(dep => {
+            // Only include if not already changed
+            if (!changedFiles.includes(dep)) {
+              dependencyFiles.add(dep);
+              dependencyMap.set(dep, (dependencyMap.get(dep) || 0) + 1);
+            }
+          });
+        } catch (error) {
+          core.warning(`⚠️  Could not analyze dependencies for ${changedFile}: ${error.message}`);
+        }
+      }
+
+      if (dependencyFiles.size === 0) {
+        return '';
+      }
+
+      // Sort dependencies by relevance (most frequently imported first)
+      const sortedDependencies = Array.from(dependencyFiles)
+        .filter(dep => (dependencyMap.get(dep) || 0) >= CONTEXT_CONFIG.MIN_DEPENDENCY_USAGE_COUNT)
+        .sort((a, b) => (dependencyMap.get(b) || 0) - (dependencyMap.get(a) || 0))
+        .slice(0, CONTEXT_CONFIG.MAX_DEPENDENCY_FILES);
+
+      let context = '🔗 First-Level Dependencies (Most Relevant):\n';
+
+      core.info(
+        `📊 Found ${dependencyFiles.size} unique dependencies, including top ${sortedDependencies.length} most relevant`
+      );
+
+      for (const depFile of sortedDependencies) {
+        try {
+          const depContext = this.getDependencyFileContext(depFile);
+          if (depContext) {
+            context += `\n📄 ${depFile} (imported by ${dependencyMap.get(depFile)} changed file${dependencyMap.get(depFile) > 1 ? 's' : ''}):\n`;
+            context += depContext;
+          }
+        } catch (error) {
+          core.warning(`⚠️  Could not get context for dependency ${depFile}: ${error.message}`);
+        }
+      }
+
+      return context;
+    } catch (error) {
+      core.warning(`⚠️  Error getting first-level dependency context: ${error.message}`);
+      return '';
+    }
+  }
+
+  /**
+   * Extract file dependencies (imports/requires) from a file
+   */
+  extractFileDependencies(filePath) {
+    const dependencies = new Set();
+
+    try {
+      const escapedFile = this.escapeFilePath(filePath);
+      const fileContent = ShellExecutor.executeWithFallback(
+        `git show HEAD:${escapedFile} 2>/dev/null`,
+        `cat ${escapedFile} 2>/dev/null`
+      );
+
+      if (!fileContent.trim()) {
+        return [];
+      }
+
+      const lines = fileContent.split('\n');
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+
+        // ES6 imports - extract relative/absolute paths
+        const es6Match = trimmed.match(/^import\s+.*\s+from\s+['"]([^'"]+)['"]/);
+        if (es6Match) {
+          const importPath = es6Match[1];
+          if (this.isLocalDependency(importPath)) {
+            const resolvedPath = this.resolveImportPath(importPath, filePath);
+            if (resolvedPath) {
+              dependencies.add(resolvedPath);
+            }
+          }
+        }
+
+        // CommonJS requires - extract relative/absolute paths
+        const requireMatch = trimmed.match(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+        if (requireMatch) {
+          const requirePath = requireMatch[1];
+          if (this.isLocalDependency(requirePath)) {
+            const resolvedPath = this.resolveImportPath(requirePath, filePath);
+            if (resolvedPath) {
+              dependencies.add(resolvedPath);
+            }
+          }
+        }
+
+        // Dynamic imports
+        const dynamicMatch = trimmed.match(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+        if (dynamicMatch) {
+          const importPath = dynamicMatch[1];
+          if (this.isLocalDependency(importPath)) {
+            const resolvedPath = this.resolveImportPath(importPath, filePath);
+            if (resolvedPath) {
+              dependencies.add(resolvedPath);
+            }
+          }
+        }
+      }
+
+      return Array.from(dependencies);
+    } catch (error) {
+      core.warning(`⚠️  Error extracting dependencies from ${filePath}: ${error.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Check if an import path is a local dependency (not external package)
+   */
+  isLocalDependency(importPath) {
+    // Skip external packages (no leading ./ or ../)
+    if (
+      !importPath.startsWith('./') &&
+      !importPath.startsWith('../') &&
+      !importPath.startsWith('/')
+    ) {
+      return false;
+    }
+
+    // Skip common external patterns
+    const externalPatterns = [
+      /^@[^/]+\//, // scoped packages like @babel/core
+      /^[a-zA-Z0-9_-]+$/ // simple package names
+    ];
+
+    return !externalPatterns.some(pattern => pattern.test(importPath));
+  }
+
+  /**
+   * Resolve import path to actual file path
+   */
+  resolveImportPath(importPath, fromFile) {
+    try {
+      const path = require('path');
+      const fromDir = path.dirname(fromFile);
+
+      // Handle different import patterns
+      let resolvedPath;
+
+      if (importPath.startsWith('/')) {
+        // Absolute path
+        resolvedPath = importPath;
+      } else {
+        // Relative path
+        resolvedPath = path.resolve(fromDir, importPath);
+      }
+
+      // Check if path already has an extension
+      if (path.extname(resolvedPath)) {
+        // Path already has extension, try as-is
+        if (this.fileExists(resolvedPath)) {
+          return resolvedPath;
+        }
+      } else {
+        // Try different file extensions
+        const extensions = [
+          '.js',
+          '.ts',
+          '.tsx',
+          '.jsx',
+          '.vue',
+          '.svelte',
+          '/index.js',
+          '/index.ts'
+        ];
+
+        for (const ext of extensions) {
+          const testPath = resolvedPath + ext;
+          if (this.fileExists(testPath)) {
+            return testPath;
+          }
+        }
+      }
+
+      // Try without extension as fallback
+      if (this.fileExists(resolvedPath)) {
+        return resolvedPath;
+      }
+
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Check if file exists
+   */
+  fileExists(filePath) {
+    try {
+      ShellExecutor.execute(`test -f "${filePath}"`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get focused context for a dependency file (only essential information)
+   */
+  getDependencyFileContext(filePath) {
+    try {
+      const escapedFile = this.escapeFilePath(filePath);
+      const fileContent = ShellExecutor.executeWithFallback(
+        `git show HEAD:${escapedFile} 2>/dev/null`,
+        `cat ${escapedFile} 2>/dev/null`
+      );
+
+      if (!fileContent.trim()) {
+        return '  (File not found or empty)';
+      }
+
+      const context = [];
+      const lines = fileContent.split('\n');
+
+      // Extract key information (exports, function signatures, class definitions)
+      for (const line of lines) {
+        const trimmed = line.trim();
+
+        // Exports (most important for understanding what's available)
+        if (trimmed.match(/^export\s+(default\s+)?(function|class|const|let|var|interface|type)/)) {
+          if (context.length < CONTEXT_CONFIG.MAX_DEPENDENCY_CONTEXT_LINES) {
+            context.push(`  ${trimmed}`);
+          }
+        }
+        // Module exports
+        else if (trimmed.match(/module\.exports\s*=/)) {
+          if (context.length < CONTEXT_CONFIG.MAX_DEPENDENCY_CONTEXT_LINES) {
+            context.push(`  ${trimmed}`);
+          }
+        }
+        // Named exports
+        else if (trimmed.match(/^export\s*{/)) {
+          if (context.length < CONTEXT_CONFIG.MAX_DEPENDENCY_CONTEXT_LINES) {
+            context.push(`  ${trimmed}`);
+          }
+        }
+        // Function/class definitions (without export) - only if we have space
+        else if (trimmed.match(/^(function|class|const|let|var)\s+\w+/)) {
+          if (context.length < CONTEXT_CONFIG.MAX_DEPENDENCY_CONTEXT_LINES) {
+            context.push(`  ${trimmed}`);
+          }
+        }
+
+        // Break if we've reached the limit
+        if (context.length >= CONTEXT_CONFIG.MAX_DEPENDENCY_CONTEXT_LINES) {
+          break;
+        }
+      }
+
+      return context.length > 0 ? context.join('\n') : '  (No exports or key definitions found)';
+    } catch (error) {
+      return `  (Error reading file: ${error.message})`;
+    }
   }
 
   /**

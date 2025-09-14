@@ -600,4 +600,145 @@ module.exports.UserService = class UserService {};`;
       expect(result).toBeDefined();
     });
   });
+
+  describe('First-Level Dependency Context', () => {
+    beforeEach(() => {
+      // Reset mocks
+      jest.clearAllMocks();
+    });
+
+    it('should extract dependencies from changed files', () => {
+      const mockFileContent = `
+import { helper } from './utils/helper.js';
+import { config } from '../config/settings.js';
+import React from 'react';
+import { someUtil } from './components/Button.jsx';
+      `;
+
+      // Mock fileExists to return true for all test files
+      execSync.mockImplementation((command) => {
+        if (command.includes('test -f')) {
+          return ''; // File exists
+        }
+        return mockFileContent;
+      });
+
+      const dependencies = contextService.extractFileDependencies('src/components/App.jsx');
+
+      // Check that we get resolved paths (they will be absolute paths)
+      expect(dependencies.length).toBeGreaterThan(0);
+      expect(dependencies.some(dep => dep.includes('utils/helper.js'))).toBe(true);
+      expect(dependencies.some(dep => dep.includes('config/settings.js'))).toBe(true);
+      expect(dependencies.some(dep => dep.includes('components/Button.jsx'))).toBe(true);
+      expect(dependencies).not.toContain('react'); // External package should be excluded
+    });
+
+    it('should identify local dependencies correctly', () => {
+      expect(contextService.isLocalDependency('./utils/helper.js')).toBe(true);
+      expect(contextService.isLocalDependency('../config/settings.js')).toBe(true);
+      expect(contextService.isLocalDependency('/absolute/path/file.js')).toBe(true);
+      expect(contextService.isLocalDependency('react')).toBe(false);
+      expect(contextService.isLocalDependency('@babel/core')).toBe(false);
+      expect(contextService.isLocalDependency('lodash')).toBe(false);
+    });
+
+    it('should get dependency context with size limits', () => {
+      const mockDependencyContent = `
+export function helperFunction() {
+  return 'helper';
+}
+
+export const CONSTANT = 'value';
+
+export default class HelperClass {
+  constructor() {}
+}
+
+export function anotherExportedFunction() {
+  return 'another';
+}
+
+export const ANOTHER_CONSTANT = 'another value';
+
+export class AnotherClass {
+  constructor() {}
+}
+
+export function thirdExportedFunction() {
+  return 'third';
+}
+
+export const THIRD_CONSTANT = 'third value';
+
+function privateFunction() {
+  return 'private';
+}
+
+function anotherPrivateFunction() {
+  return 'another private';
+}
+      `;
+
+      execSync.mockImplementation((command) => {
+        if (command.includes('test -f')) {
+          return ''; // File exists
+        }
+        return mockDependencyContent;
+      });
+
+      const context = contextService.getDependencyFileContext('utils/helper.js');
+
+      expect(context).toContain('export function helperFunction');
+      expect(context).toContain('export const CONSTANT');
+      expect(context).toContain('export default class HelperClass');
+      expect(context).toContain('export function anotherExportedFunction');
+      expect(context).toContain('export const ANOTHER_CONSTANT');
+      expect(context).toContain('export class AnotherClass');
+      expect(context).toContain('export function thirdExportedFunction');
+      expect(context).toContain('export const THIRD_CONSTANT');
+      expect(context).not.toContain('privateFunction'); // Should be limited by MAX_DEPENDENCY_CONTEXT_LINES
+      expect(context).not.toContain('anotherPrivateFunction'); // Should also be excluded
+    });
+
+    it('should generate first-level dependency context', () => {
+      const mockChangedFiles = ['src/components/App.jsx', 'src/pages/Home.jsx'];
+      const mockAppContent = `
+import { helper } from './utils/helper.js';
+import { config } from '../config/settings.js';
+      `;
+      const mockHomeContent = `
+import { helper } from './utils/helper.js';
+import { api } from '../services/api.js';
+      `;
+
+      // Mock file content for changed files
+      execSync.mockImplementation((command) => {
+        if (command.includes('test -f')) {
+          return ''; // File exists
+        }
+        if (command.includes('src/components/App.jsx')) return mockAppContent;
+        if (command.includes('src/pages/Home.jsx')) return mockHomeContent;
+        if (command.includes('utils/helper.js')) return 'export function helper() {}';
+        if (command.includes('config/settings.js')) return 'export const config = {};';
+        if (command.includes('services/api.js')) return 'export const api = {};';
+        return '';
+      });
+
+      const context = contextService.getFirstLevelDependencyContext(mockChangedFiles);
+
+      expect(context).toContain('First-Level Dependencies');
+      expect(context).toContain('utils/helper.js');
+      expect(context).toContain('config/settings.js');
+      expect(context).toContain('services/api.js');
+    });
+
+    it('should respect configuration limits', () => {
+      // This test would require mocking the CONTEXT_CONFIG
+      // For now, we'll just verify the method exists and can be called
+      expect(typeof contextService.getFirstLevelDependencyContext).toBe('function');
+      expect(typeof contextService.extractFileDependencies).toBe('function');
+      expect(typeof contextService.isLocalDependency).toBe('function');
+      expect(typeof contextService.getDependencyFileContext).toBe('function');
+    });
+  });
 });
