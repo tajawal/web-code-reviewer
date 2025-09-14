@@ -137,6 +137,9 @@ class ContextService {
           const dependencyContext = this.getFirstLevelDependencyContext(changedFiles);
           if (dependencyContext) {
             context += '\n' + dependencyContext;
+            core.info(
+              `📦 Added first-level dependency context: ${Math.round(dependencyContext.length / 1024)}KB`
+            );
           }
         }
 
@@ -433,6 +436,9 @@ class ContextService {
       if (section.includes('Dependencies Context')) {
         // Keep dependencies as-is (usually small)
         summary.push(`---${section}`);
+      } else if (section.includes('First-Level Dependencies')) {
+        // Keep first-level dependencies as-is (usually small)
+        summary.push(`---${section}`);
       } else if (section.includes('Project Structure Context')) {
         // Summarize project structure
         const lines = section.split('\n').filter(line => line.trim());
@@ -565,6 +571,9 @@ class ContextService {
         organizedContext += `${emoji} ${sectionType.toUpperCase()}:\n`;
         organizedContext += '-'.repeat(40) + '\n';
         organizedContext += content.trim() + '\n\n';
+        core.info(
+          `📋 Organized context section: ${sectionType} (${Math.round(content.length / 1024)}KB)`
+        );
       }
     });
 
