@@ -60,8 +60,6 @@ function getReviewPrompt(language) {
   return LANGUAGE_PROMPTS[language] || LANGUAGE_PROMPTS.js; // Default to JS if language not found
 }
 
-console.log(buildLanguagePrompt('qa_backend'));
-
 module.exports = {
   LANGUAGE_PROMPTS,
   getReviewPrompt,

@@ -173,12 +173,12 @@ class ReviewService {
     shouldBlockMerge,
     changedFiles,
     llmResponse,
-    department,
-    team,
-    provider,
-    baseBranch,
-    pathToFiles,
-    ignorePatterns
+    _department,
+    _team,
+    _provider,
+    _baseBranch,
+    _pathToFiles,
+    _ignorePatterns
   ) {
     const status = shouldBlockMerge ? '❌ **DO NOT MERGE**' : '✅ **SAFE TO MERGE**';
     const statusDescription = shouldBlockMerge
