@@ -295,6 +295,30 @@ Tests (≤2 lines):
 - Path traversal: "../../etc/passwd" rejected.
 `,
 
+  swift: `Auto-Critical Overrides — deterministic and absolute
+Policy:
+- Crash/deadlock-causing issues or UI freezes observed in production paths => severity_proposed="critical", evidence_strength=4–5, confidence ≥0.8.
+- Dev/test-only (#if DEBUG) or unreachable => downgrade to "suggestion" with evidence_strength ≤2, confidence ≤0.5. Prefix fix_code_patch with "// approximate" if anchoring is uncertain.
+- Always anchor ≤12-line snippet including the risky call; use post-patch line numbers. Deduplicate occurrences array when the same pattern repeats.
+
+Auto-critical items:
+- Force unwrap (!) / try! / as! on data sourced from external or untrusted inputs (network payloads, dictionary lookup, URL init) without preceding validation. Safe invariants such as IBOutlets or test-only fixtures are exempt. Fix: guard let / if let / try? with graceful error handling.
+- fatalError / preconditionFailure / assertionFailure in shipping execution paths without #if DEBUG guards. Fix: convert to thrown errors, logging, or debug-only assertions.
+- Blocking synchronous I/O or networking on the main actor (Data(contentsOf:), FileManager contentsOfDirectory, JSONDecoder.decode on large payloads) executed during UI work. Fix: move to async/await or background queues with completion on MainActor.
+- DispatchQueue.main.sync (or Task { @MainActor in … } invoking sync) from code that may already be on the main queue, risking deadlock. Fix: remove sync or guard against mainThread.
+- Task.detached / background queue mutating @State/@Published/@MainActor state without hopping back to main, leading to runtime crashes. Fix: use Task { @MainActor in … } or DispatchQueue.main.async for UI-bound mutations.
+
+Evidence defaults:
+- Direct crash path observed: evidence_strength=5, confidence=0.9.
+- Potential but unproven crash: evidence_strength=3, confidence=0.6 (downgrade severity if mitigation likely).
+
+Tests (≤2 lines examples):
+- Optional unwrap: guard payload["id"] != nil prevents crash.
+- fatalError: production build handles invalid state gracefully without terminating.
+- Main thread: instrumentation shows no blocking I/O on main actor.
+- Concurrency: background task does not mutate UI state without MainActor hop.
+`,
+
   qa_web: QA_CRITICAL_OVERRIDES.qa_web,
   qa_android: QA_CRITICAL_OVERRIDES.qa_android,
   qa_backend: QA_CRITICAL_OVERRIDES.qa_backend

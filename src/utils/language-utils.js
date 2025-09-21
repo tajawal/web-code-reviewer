@@ -20,6 +20,7 @@ function getLanguageForFile(filePath) {
     pyi: 'python',
     java: 'java',
     php: 'php',
+    swift: 'swift',
     html: 'html',
     css: 'css',
     scss: 'scss',

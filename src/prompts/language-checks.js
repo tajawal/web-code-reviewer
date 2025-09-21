@@ -212,6 +212,56 @@ Modern PHP Security:
 
 Note: Use post-patch line numbers. If only diff hunk is known or source is uncertain, set evidence_strength ≤ 2 and confidence ≤ 0.5, and prefix fix_code_patch with "// approximate".`,
 
+  swift: `Swift Checks (only if visible in the diff; do not assume unseen code)
+
+Performance:
+- Heavy synchronous work on the main actor (e.g., Data(contentsOf:), JSONDecoder.decode, CoreData fetch) triggered from view/body lifecycle. Anchor call + surrounding context. Default 4,0.8.
+- O(n^2) or nested loops over large collections inside UI updates or hot paths. Anchor nested loop. Default 3,0.7.
+- Recreating expensive formatters/decoders in SwiftUI body/computed property executed each render. Anchor property/closure. Default 3,0.7.
+- Long-running operations in .task/onAppear without cancellation/backpressure. Anchor async block. Default 3,0.7.
+
+Safety & Stability:
+- Risky force unwrap (!) / try! / as! on data derived from external or unvalidated sources (API payloads, dictionary lookup, URL init) outside guaranteed invariants (e.g., IBOutlets, test fixtures, private init wiring). Anchor the line and note why the input may be nil. Default 4,0.8.
+- fatalError/preconditionFailure/assertionFailure reachable in production flow without #if DEBUG guard. Anchor call. Default 4,0.8.
+- Array subscripts or casting without validation when input may change. Anchor subscript/as? usage. Default 3,0.7.
+
+Concurrency:
+- UI/state mutations on background queues (DispatchQueue.global/Task.detached) without hopping to MainActor. Anchor mutation and queue. Default 4,0.8.
+- Long-lived Task/async sequences capturing self strongly from classes/ObservableObject causing leaks. Anchor Task + capture list. Default 3,0.7.
+- Shared mutable state accessed from multiple queues without actors/@MainActor synchronization. Anchor property + access sites. Default 4,0.8.
+- Using Task.detached for UI work where Task { @MainActor in … } is required. Anchor Task.detached usage. Default 3,0.7.
+
+SwiftUI Specific:
+- Using @State with reference types or passing @State via Binding (should use @StateObject/@ObservedObject). Anchor property wrapper. Default 3,0.7.
+- Creating ObservableObject/StateObject in body/computed property (recreated every render). Anchor initialization. Default 3,0.7.
+- Using @ObservedObject for view-owned instances that must persist (should be @StateObject). Anchor property. Default 3,0.7.
+- ForEach over mutable collections without stable ids (id: .self on non-Hashable or non-unique data). Anchor ForEach declaration. Default 2,0.6.
+- Putting heavy synchronous work directly inside View.body/building modifiers without Task/Dispatch. Anchor body section. Default 3,0.7.
+
+UIKit Specific:
+- Touching UIKit/AppKit UI from background queues (UIView/UIViewController property mutations) without dispatching to the main queue. Anchor mutation + queue. Default 4,0.8.
+- Missing [weak self] (or equivalent) in escaping closures that capture self-owned controllers/managers, risking retain cycles. Anchor closure. Default 3,0.7.
+- Not calling super in lifecycle overrides where required (viewDidLoad, viewWillAppear, viewDidDisappear). Anchor override. Default 3,0.7.
+- Layout or rendering work inside viewDidLayoutSubviews without guarding repeated execution, causing performance regressions. Anchor logic. Default 3,0.7.
+- Performing heavy synchronous work inside UI event handlers without throttling/backpressure (e.g., blocking main thread during scroll). Anchor handler. Default 3,0.7.
+
+Maintainability & Architecture:
+- View structs >400 lines or body/closure >200 lines becoming "mega views". Anchor struct/body. Default 2,0.5.
+- Functions exceeding ~120 lines or deeply nested control flow. Anchor function signature. Default 2,0.5.
+- Mixing networking/persistence directly inside SwiftUI View instead of delegating to ViewModel/service. Anchor offending code. Default 2,0.5 (warn only).
+- Singleton/data-store mutations from multiple places without abstraction or dependency injection. Anchor access. Default 2,0.5 (warn).
+
+Testing & Tooling:
+- Critical business logic (payments, bookings, pricing, auth) introduced without accompanying XCTest/Combine test scaffolding if the project has tests. Anchor target function(s). Default 2,0.5.
+- New concurrency utilities without unit tests covering cancellation/error paths. Anchor utility. Default 2,0.5.
+
+Style & Naming:
+- Non-conventional Swift naming (camelCase for methods/properties, PascalCase for types) in public APIs. Anchor declaration. Default 2,0.5.
+- Missing access control on new public types/functions when internal should suffice. Anchor decl. Default 2,0.5.
+
+Note: Use post-patch line numbers. If only diff hunk is known or source is uncertain, set evidence_strength ≤ 2 and confidence ≤ 0.5, and prefix fix_code_patch with "// approximate".
+`,
+
   qa_web: QA_SPECIFIC_CHECKS.qa_web,
   qa_android: QA_SPECIFIC_CHECKS.qa_android,
   qa_backend: QA_SPECIFIC_CHECKS.qa_backend

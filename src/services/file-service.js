@@ -96,12 +96,38 @@ class FileService {
       let structure = '';
       try {
         // First try git show - get more comprehensive structure
-        const structureCommand = `git show HEAD:${filePath} 2>/dev/null | head -100 | grep -E '^(import|export|class|function|const|let|var|interface|type|enum|module\\.exports|require\\(|\\/\\*|\\/\\/|^\\s*\\/\\*|^\\s*\\/\\/)' | head -30`;
+        const structureCommand = `git show HEAD:${filePath} 2>/dev/null | head -100 | grep -E '^\\s*(\
+import|export|class|function|const|let|var|interface|type|enum|module\\.exports|require\\(|\
+func|struct|protocol|extension|actor|@State|@Binding|@ObservedObject|@StateObject|\
+# Python
+from\\s+[A-Za-z0-9_.]+\\s+import|def\\b|async\\s+def\\b|class\\b|@[_A-Za-z]\\w*|if\\s+__name__\\s*==|\
+# PHP
+<\\?php|namespace\\b|use\\b|trait\\b|require(?:_once)?\\s*\\(|include(?:_once)?\\s*\\(|(public|protected|private)\\s+(static\\s+)?function\\b|\
+(abstract|final)?\\s*(class|interface|enum)\\b|\
+# Java
+package\\b|import\\b|@(?!State|Binding|ObservedObject|StateObject)[_A-Za-z]\\w*|\
+(public|protected|private)\\s+(abstract\\s+|final\\s+)?(class|interface|enum|record)\\b|\
+# Comments
+//|/\\*|#\
+)' | head -30`;
         structure = execSync(structureCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 });
       } catch {
         // If git show fails, try reading file directly
         try {
-          const directCommand = `cat ${filePath} 2>/dev/null | head -100 | grep -E '^(import|export|class|function|const|let|var|interface|type|enum|module\\.exports|require\\(|\\/\\*|\\/\\/|^\\s*\\/\\*|^\\s*\\/\\/)' | head -30`;
+          const directCommand = `cat ${filePath} 2>/dev/null | head -100 | grep -E '^\\s*(\
+import|export|class|function|const|let|var|interface|type|enum|module\\.exports|require\\(|\
+func|struct|protocol|extension|actor|@State|@Binding|@ObservedObject|@StateObject|\
+# Python
+from\\s+[A-Za-z0-9_.]+\\s+import|def\\b|async\\s+def\\b|class\\b|@[_A-Za-z]\\w*|if\\s+__name__\\s*==|\
+# PHP
+<\\?php|namespace\\b|use\\b|trait\\b|require(?:_once)?\\s*\\(|include(?:_once)?\\s*\\(|(public|protected|private)\\s+(static\\s+)?function\\b|\
+(abstract|final)?\\s*(class|interface|enum)\\b|\
+# Java
+package\\b|import\\b|@(?!State|Binding|ObservedObject|StateObject)[_A-Za-z]\\w*|\
+(public|protected|private)\\s+(abstract\\s+|final\\s+)?(class|interface|enum|record)\\b|\
+# Comments
+//|/\\*|#\
+)' | head -30`;
           structure = execSync(directCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 });
         } catch {
           // If both fail, return basic file header
