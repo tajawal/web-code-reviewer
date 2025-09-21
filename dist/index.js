@@ -30428,8 +30428,6 @@ function getReviewPrompt(language) {
   return LANGUAGE_PROMPTS[language] || LANGUAGE_PROMPTS.js; // Default to JS if language not found
 }
 
-console.log(buildLanguagePrompt('qa_backend'));
-
 module.exports = {
   LANGUAGE_PROMPTS,
   getReviewPrompt,
@@ -32149,37 +32147,37 @@ class FileService {
       let structure = '';
       try {
         // First try git show - get more comprehensive structure
-        const structureCommand = `git show HEAD:${filePath} 2>/dev/null | head -100 | grep -E '^\s*(\
-import|export|class|function|const|let|var|interface|type|enum|module\.exports|require\(|\
+        const structureCommand = `git show HEAD:${filePath} 2>/dev/null | head -100 | grep -E '^\\s*(\
+import|export|class|function|const|let|var|interface|type|enum|module\\.exports|require\\(|\
 func|struct|protocol|extension|actor|@State|@Binding|@ObservedObject|@StateObject|\
 # Python
-from\s+[A-Za-z0-9_.]+\s+import|def\b|async\s+def\b|class\b|@[_A-Za-z]\w*|if\s+__name__\s*==|\
+from\\s+[A-Za-z0-9_.]+\\s+import|def\\b|async\\s+def\\b|class\\b|@[_A-Za-z]\\w*|if\\s+__name__\\s*==|\
 # PHP
-<\?php|namespace\b|use\b|trait\b|require(?:_once)?\s*\(|include(?:_once)?\s*\(|(public|protected|private)\s+(static\s+)?function\b|\
-(abstract|final)?\s*(class|interface|enum)\b|\
+<\\?php|namespace\\b|use\\b|trait\\b|require(?:_once)?\\s*\\(|include(?:_once)?\\s*\\(|(public|protected|private)\\s+(static\\s+)?function\\b|\
+(abstract|final)?\\s*(class|interface|enum)\\b|\
 # Java
-package\b|import\b|@(?!State|Binding|ObservedObject|StateObject)[_A-Za-z]\w*|\
-(public|protected|private)\s+(abstract\s+|final\s+)?(class|interface|enum|record)\b|\
+package\\b|import\\b|@(?!State|Binding|ObservedObject|StateObject)[_A-Za-z]\\w*|\
+(public|protected|private)\\s+(abstract\\s+|final\\s+)?(class|interface|enum|record)\\b|\
 # Comments
-//|/\*|#\
+//|/\\*|#\
 )' | head -30`;
         structure = execSync(structureCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 });
       } catch {
         // If git show fails, try reading file directly
         try {
-          const directCommand = `cat ${filePath} 2>/dev/null | head -100 | grep -E '^\s*(\
-import|export|class|function|const|let|var|interface|type|enum|module\.exports|require\(|\
+          const directCommand = `cat ${filePath} 2>/dev/null | head -100 | grep -E '^\\s*(\
+import|export|class|function|const|let|var|interface|type|enum|module\\.exports|require\\(|\
 func|struct|protocol|extension|actor|@State|@Binding|@ObservedObject|@StateObject|\
 # Python
-from\s+[A-Za-z0-9_.]+\s+import|def\b|async\s+def\b|class\b|@[_A-Za-z]\w*|if\s+__name__\s*==|\
+from\\s+[A-Za-z0-9_.]+\\s+import|def\\b|async\\s+def\\b|class\\b|@[_A-Za-z]\\w*|if\\s+__name__\\s*==|\
 # PHP
-<\?php|namespace\b|use\b|trait\b|require(?:_once)?\s*\(|include(?:_once)?\s*\(|(public|protected|private)\s+(static\s+)?function\b|\
-(abstract|final)?\s*(class|interface|enum)\b|\
+<\\?php|namespace\\b|use\\b|trait\\b|require(?:_once)?\\s*\\(|include(?:_once)?\\s*\\(|(public|protected|private)\\s+(static\\s+)?function\\b|\
+(abstract|final)?\\s*(class|interface|enum)\\b|\
 # Java
-package\b|import\b|@(?!State|Binding|ObservedObject|StateObject)[_A-Za-z]\w*|\
-(public|protected|private)\s+(abstract\s+|final\s+)?(class|interface|enum|record)\b|\
+package\\b|import\\b|@(?!State|Binding|ObservedObject|StateObject)[_A-Za-z]\\w*|\
+(public|protected|private)\\s+(abstract\\s+|final\\s+)?(class|interface|enum|record)\\b|\
 # Comments
-//|/\*|#\
+//|/\\*|#\
 )' | head -30`;
           structure = execSync(directCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 });
         } catch {
@@ -33775,12 +33773,12 @@ class ReviewService {
     shouldBlockMerge,
     changedFiles,
     llmResponse,
-    department,
-    team,
-    provider,
-    baseBranch,
-    pathToFiles,
-    ignorePatterns
+    _department,
+    _team,
+    _provider,
+    _baseBranch,
+    _pathToFiles,
+    _ignorePatterns
   ) {
     const status = shouldBlockMerge ? '❌ **DO NOT MERGE**' : '✅ **SAFE TO MERGE**';
     const statusDescription = shouldBlockMerge
