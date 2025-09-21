@@ -4,7 +4,7 @@ A GitHub Action that performs automated code reviews using Large Language Models
 
 ## ✨ Features
 
-- **🌍 Multi-Language Support**: Specialized review prompts for JavaScript/TypeScript, Python, Java, and PHP
+- **🌍 Multi-Language Support**: Specialized review prompts for JavaScript/TypeScript, Python, Java, PHP, and Swift (SwiftUI/UIKit)
 - **📊 Structured JSON Output**: Detailed analysis with severity scoring, risk factors, and confidence levels
 - **🔍 Smart File Filtering**: Language-specific file detection and filtering
 - **🤖 LLM Integration**: Supports both Claude Sonnet 4 and OpenAI GPT-4o-mini
@@ -116,6 +116,18 @@ jobs:
     team: 'fullstack-team'
     department: 'web'
 
+# Swift Review
+- name: Review Swift Code
+  uses: tajawal/web-code-reviewer@latest
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Required: GitHub token for API access
+  with:
+    language: 'swift'
+    claude_api_key: ${{ secrets.CLAUDE_API_KEY }}
+    path_to_files: 'Sources/,App/'
+    team: 'ios-team'
+    department: 'mobile'
+
 # QA Web - Cypress Test Review
 - name: Review Cypress Tests
   uses: tajawal/web-code-reviewer@latest
@@ -179,7 +191,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Required: GitHub token for API access
         with:
           llm_provider: 'claude'  # or 'openai'
-          language: 'js'          # js, python, java, php
+          language: 'js'          # js, python, java, php, swift, qa_web, qa_android, qa_backend
           claude_api_key: ${{ secrets.CLAUDE_API_KEY }}
           # openai_api_key: ${{ secrets.OPENAI_API_KEY }}  # if using OpenAI
           path_to_files: 'packages/,src/'
@@ -244,6 +256,17 @@ jobs:
   - Input validation
   - Performance optimization
   - Modern PHP practices
+
+### Swift / SwiftUI (`swift`)
+- **File Extensions**: `.swift`
+- **Frameworks**: SwiftUI, UIKit, Combine
+- **Focus Areas**:
+  - Concurrency correctness (async/await, actors, GCD, Combine cancellation)
+  - SwiftUI state management (`@State`, `@Binding`, `@ObservedObject`, `@StateObject`)
+  - Performance on the main thread and rendering efficiency
+  - Crash prevention (risky force unwraps/`try!` while respecting safe invariants like IBOutlets)
+  - UIKit lifecycle and memory management (main-thread UI updates, retain cycles, calling super in overrides)
+  - Architecture and testability of ViewModels/services
 
 ### QA Web Automation (`qa_web`)
 - **File Extensions**: `.js`, `.spec.js`, `.test.js`, `.cy.js`, `.feature`

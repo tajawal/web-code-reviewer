@@ -47,6 +47,7 @@ const LANGUAGE_PROMPTS = {
   python: buildLanguagePrompt('python'),
   java: buildLanguagePrompt('java'),
   php: buildLanguagePrompt('php'),
+  swift: buildLanguagePrompt('swift'),
   qa_web: buildLanguagePrompt('qa_web'),
   qa_android: buildLanguagePrompt('qa_android'),
   qa_backend: buildLanguagePrompt('qa_backend')

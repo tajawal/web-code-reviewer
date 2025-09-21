@@ -12,7 +12,7 @@ inputs:
     required: false
     default: 'packages/'
   language:
-    description: 'Programming language for code review (js, python, java, php)'
+    description: 'Programming language for code review (js, python, java, php, swift, qa_web, qa_android, qa_backend)'
     required: false
     default: 'js'
   base_branch:

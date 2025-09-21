@@ -96,12 +96,12 @@ class FileService {
       let structure = '';
       try {
         // First try git show - get more comprehensive structure
-        const structureCommand = `git show HEAD:${filePath} 2>/dev/null | head -100 | grep -E '^(import|export|class|function|const|let|var|interface|type|enum|module\\.exports|require\\(|\\/\\*|\\/\\/|^\\s*\\/\\*|^\\s*\\/\\/)' | head -30`;
+        const structureCommand = `git show HEAD:${filePath} 2>/dev/null | head -100 | grep -E '^(import|export|class|function|func|struct|protocol|extension|actor|const|let|var|interface|type|enum|module\\.exports|require\\(|@State|@Binding|@ObservedObject|@StateObject|\\/\\*|\\/\\/|^\\s*\\/\\*|^\\s*\\/\\/)' | head -30`;
         structure = execSync(structureCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 });
       } catch {
         // If git show fails, try reading file directly
         try {
-          const directCommand = `cat ${filePath} 2>/dev/null | head -100 | grep -E '^(import|export|class|function|const|let|var|interface|type|enum|module\\.exports|require\\(|\\/\\*|\\/\\/|^\\s*\\/\\*|^\\s*\\/\\/)' | head -30`;
+          const directCommand = `cat ${filePath} 2>/dev/null | head -100 | grep -E '^(import|export|class|function|func|struct|protocol|extension|actor|const|let|var|interface|type|enum|module\\.exports|require\\(|@State|@Binding|@ObservedObject|@StateObject|\\/\\*|\\/\\/|^\\s*\\/\\*|^\\s*\\/\\/)' | head -30`;
           structure = execSync(directCommand, { encoding: 'utf8', maxBuffer: 1024 * 1024 });
         } catch {
           // If both fail, return basic file header

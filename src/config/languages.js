@@ -23,6 +23,11 @@ const LANGUAGE_FILE_CONFIGS = {
     patterns: ['*.php'],
     name: 'PHP'
   },
+  swift: {
+    extensions: ['.swift'],
+    patterns: ['*.swift'],
+    name: 'Swift (SwiftUI/UIKit)'
+  },
   qa_web: {
     extensions: ['.js', '.jsx', '.ts', '.tsx', '.mjs'],
     patterns: ['*.js', '*.jsx', '*.ts', '*.tsx', '*.mjs'],
@@ -64,6 +69,12 @@ const LANGUAGE_ROLE_CONFIGS = {
     language: 'PHP',
     testExample: ' (e.g., Pest/PHPUnit feature test)',
     fileExample: 'app/Http/Controllers/UserController.php'
+  },
+  swift: {
+    role: 'iOS engineer',
+    language: 'Swift',
+    testExample: ' (e.g., XCTest/XCUITest, snapshot tests)',
+    fileExample: 'Sources/App/Features/Home/HomeView.swift'
   },
   qa_web: {
     role: 'Web QA - Automation Engineer',

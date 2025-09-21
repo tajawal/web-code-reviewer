@@ -22,7 +22,7 @@ describe('Prompts Module Tests', () => {
     });
 
     it('should have all required language configurations', () => {
-      const expectedLanguages = ['js', 'python', 'java', 'php', 'qa_web', 'qa_android', 'qa_backend'];
+      const expectedLanguages = ['js', 'python', 'java', 'php', 'swift', 'qa_web', 'qa_android', 'qa_backend'];
 
       expectedLanguages.forEach(lang => {
         expect(LANGUAGE_ROLE_CONFIGS[lang]).toBeDefined();
@@ -131,6 +131,7 @@ describe('Prompts Module Tests', () => {
     it('should include language-specific security rules', () => {
       const jsPrompt = buildLanguagePrompt('js');
       const pythonPrompt = buildLanguagePrompt('python');
+      const swiftPrompt = buildLanguagePrompt('swift');
       const qaWebPrompt = buildLanguagePrompt('qa_web');
 
       // JavaScript specific checks
@@ -144,25 +145,34 @@ describe('Prompts Module Tests', () => {
       // QA Web specific checks
       expect(qaWebPrompt).toContain('Web QA');
       expect(qaWebPrompt).toContain('Automation Engineer');
+
+      // Swift specific checks
+      expect(swiftPrompt).toContain('Swift');
+      expect(swiftPrompt).toContain('UIKit');
+      expect(swiftPrompt).toContain('iOS engineer');
     });
 
     it('should include appropriate test examples for each language', () => {
       const jsPrompt = buildLanguagePrompt('js');
       const pythonPrompt = buildLanguagePrompt('python');
+      const swiftPrompt = buildLanguagePrompt('swift');
       const qaWebPrompt = buildLanguagePrompt('qa_web');
 
       expect(jsPrompt).toContain('RTL/jest/vitest');
       expect(pythonPrompt).toContain('pytest');
+      expect(swiftPrompt).toContain('XCTest');
       expect(qaWebPrompt).toContain('cypress');
     });
 
     it('should include appropriate file examples for each language', () => {
       const jsPrompt = buildLanguagePrompt('js');
       const pythonPrompt = buildLanguagePrompt('python');
+      const swiftPrompt = buildLanguagePrompt('swift');
       const qaWebPrompt = buildLanguagePrompt('qa_web');
 
       expect(jsPrompt).toContain('Table.tsx');
       expect(pythonPrompt).toContain('user_service.py');
+      expect(swiftPrompt).toContain('HomeView.swift');
       expect(qaWebPrompt).toContain('activatesHomePage.spec.js');
     });
   });
