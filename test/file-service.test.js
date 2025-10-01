@@ -10,6 +10,7 @@ jest.mock('@actions/core', () => ({
   warning: jest.fn(),
   error: jest.fn()
 }));
+const core = require('@actions/core');
 
 // Mock child_process
 jest.mock('child_process', () => ({
@@ -223,6 +224,25 @@ src/file(with)parentheses.js`;
       expect(execSync).toHaveBeenCalledWith(
         'git diff --name-only origin/main...HEAD',
         { encoding: 'utf8' }
+      );
+    });
+
+    it('should wrap deletion blocks with context markers', () => {
+      execSync
+        .mockReturnValueOnce('src/delete.js')
+        .mockReturnValueOnce(
+          'diff --git a/src/delete.js b/src/delete.js\nindex 1111111..2222222 100644\n--- a/src/delete.js\n+++ b/src/delete.js\n@@ -1,2 +0,0 @@\n-old line\n-another old line'
+        )
+        .mockReturnValueOnce('import foo from "bar";');
+
+      const result = fileService.getFullDiff();
+
+      expect(result).toContain('--- Removed for context (flag only if the deletion is risky) ---');
+      expect(result).toContain('-old line');
+      expect(result).toContain('-another old line');
+      expect(result).toContain('--- End removed context ---');
+      expect(core.info).toHaveBeenCalledWith(
+        'ℹ️  Diff for src/delete.js contains only deletions (kept as context).'
       );
     });
   });

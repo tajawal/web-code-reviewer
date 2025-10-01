@@ -30,6 +30,7 @@ test/.env
 .Trashes
 ehthumbs.db
 Thumbs.db
+.tmp-npm-cache/
 
 # Logs
 logs
@@ -61,3 +62,6 @@ jspm_packages/
 
 # Yarn Integrity file
 .yarn-integrity 
+
+#Ignore cursor AI rules
+.cursor/rules/codacy.mdc

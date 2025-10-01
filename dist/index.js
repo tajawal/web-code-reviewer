@@ -31079,6 +31079,7 @@ Determinism & Output Contract
   scopeAndExclusions: `Scope & Exclusions
 - Review ONLY the actual file changes shown in the diffs/new files at the bottom of the prompt
 - Context files (under "SEMANTIC CODE", "FILE RELATIONSHIPS", etc.) are for reference only - DO NOT review these
+- Sections marked "Removed for context" expose deleted lines for awareness; raise an issue only when the removal itself introduces a risk.
 - Focus ONLY on critical risks: exploitable security flaws, meaningful performance regressions, memory/resource leaks, unsafe patterns, architectural violations.
 - Ignore style/formatting/naming/import order/linters/auto-formatters.
 - Do NOT assume unseen code. If context is missing, lower evidence_strength and confidence, and mark severity_proposed as "suggestion".
@@ -32130,8 +32131,9 @@ class FileService {
 
       // Add file structure context
       const fileStructure = this.getFileStructureContext(filePath);
+      const formattedDiff = this.formatDeletionBlocks(diff, filePath);
 
-      return `${fileStructure}\n${diff}`;
+      return `${fileStructure}\n${formattedDiff}`;
     } catch (error) {
       core.warning(`⚠️  Could not get diff for ${filePath}: ${error.message}`);
       return '';
@@ -32195,6 +32197,54 @@ package\\b|import\\b|@(?!State|Binding|ObservedObject|StateObject)[_A-Za-z]\\w*|
       // If structure extraction fails, continue without it
       return `--- File: ${filePath} ---\n`;
     }
+  }
+
+  /**
+   * Add explicit context markers around deleted blocks so reviewers know when removals appear
+   */
+  formatDeletionBlocks(diff, filePath) {
+    if (!diff) {
+      return diff;
+    }
+
+    const lines = diff.split('\n');
+    const result = [];
+    let inDeletionBlock = false;
+    let hasDeletion = false;
+    let hasAddition = false;
+
+    for (const line of lines) {
+      const isDeletionLine = line.startsWith('-') && !line.startsWith('--- ');
+      const isAdditionLine = line.startsWith('+') && !line.startsWith('+++ ');
+
+      if (isDeletionLine && !inDeletionBlock) {
+        result.push('--- Removed for context (flag only if the deletion is risky) ---');
+        inDeletionBlock = true;
+      } else if (!isDeletionLine && inDeletionBlock) {
+        result.push('--- End removed context ---');
+        inDeletionBlock = false;
+      }
+
+      if (isDeletionLine) {
+        hasDeletion = true;
+      }
+
+      if (isAdditionLine) {
+        hasAddition = true;
+      }
+
+      result.push(line);
+    }
+
+    if (inDeletionBlock) {
+      result.push('--- End removed context ---');
+    }
+
+    if (hasDeletion && !hasAddition) {
+      core.info(`ℹ️  Diff for ${filePath} contains only deletions (kept as context).`);
+    }
+
+    return result.join('\n');
   }
 
   /**
@@ -35970,7 +36020,7 @@ module.exports = parseParams
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.29","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","node-fetch":"^3.3.2"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
+module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.30","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","node-fetch":"^3.3.2"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
 
 /***/ })
 
@@ -36112,7 +36162,7 @@ const LoggingService = __nccwpck_require__(8689);
 
 // Version information - updated during build process
 const VERSION_INFO = {
-  version: '1.14.29',
+  version: '1.14.30',
   name: 'web-code-reviewer',
   description: 'Automated code review using LLM (Claude/OpenAI) for GitHub PRs'
 };
@@ -36219,6 +36269,10 @@ class GitHubActionsReviewer {
     core.info(`📝 Using ${this.inputs.language} review prompt`);
 
     const fullDiff = this.fileService.getFullDiff();
+    core.info(`============File Diff============`);
+    core.info(fullDiff);
+    core.info(`============File Diff============`);
+
     const llmResponse = await this.llmService.callLLM(reviewPrompt, fullDiff, changedFiles);
 
     if (this.loggingService.logLLMResponse(llmResponse)) {

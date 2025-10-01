@@ -79,8 +79,9 @@ class FileService {
 
       // Add file structure context
       const fileStructure = this.getFileStructureContext(filePath);
+      const formattedDiff = this.formatDeletionBlocks(diff, filePath);
 
-      return `${fileStructure}\n${diff}`;
+      return `${fileStructure}\n${formattedDiff}`;
     } catch (error) {
       core.warning(`⚠️  Could not get diff for ${filePath}: ${error.message}`);
       return '';
@@ -144,6 +145,54 @@ package\\b|import\\b|@(?!State|Binding|ObservedObject|StateObject)[_A-Za-z]\\w*|
       // If structure extraction fails, continue without it
       return `--- File: ${filePath} ---\n`;
     }
+  }
+
+  /**
+   * Add explicit context markers around deleted blocks so reviewers know when removals appear
+   */
+  formatDeletionBlocks(diff, filePath) {
+    if (!diff) {
+      return diff;
+    }
+
+    const lines = diff.split('\n');
+    const result = [];
+    let inDeletionBlock = false;
+    let hasDeletion = false;
+    let hasAddition = false;
+
+    for (const line of lines) {
+      const isDeletionLine = line.startsWith('-') && !line.startsWith('--- ');
+      const isAdditionLine = line.startsWith('+') && !line.startsWith('+++ ');
+
+      if (isDeletionLine && !inDeletionBlock) {
+        result.push('--- Removed for context (flag only if the deletion is risky) ---');
+        inDeletionBlock = true;
+      } else if (!isDeletionLine && inDeletionBlock) {
+        result.push('--- End removed context ---');
+        inDeletionBlock = false;
+      }
+
+      if (isDeletionLine) {
+        hasDeletion = true;
+      }
+
+      if (isAdditionLine) {
+        hasAddition = true;
+      }
+
+      result.push(line);
+    }
+
+    if (inDeletionBlock) {
+      result.push('--- End removed context ---');
+    }
+
+    if (hasDeletion && !hasAddition) {
+      core.info(`ℹ️  Diff for ${filePath} contains only deletions (kept as context).`);
+    }
+
+    return result.join('\n');
   }
 
   /**

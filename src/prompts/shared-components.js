@@ -26,6 +26,7 @@ Determinism & Output Contract
   scopeAndExclusions: `Scope & Exclusions
 - Review ONLY the actual file changes shown in the diffs/new files at the bottom of the prompt
 - Context files (under "SEMANTIC CODE", "FILE RELATIONSHIPS", etc.) are for reference only - DO NOT review these
+- Sections marked "Removed for context" expose deleted lines for awareness; raise an issue only when the removal itself introduces a risk.
 - Focus ONLY on critical risks: exploitable security flaws, meaningful performance regressions, memory/resource leaks, unsafe patterns, architectural violations.
 - Ignore style/formatting/naming/import order/linters/auto-formatters.
 - Do NOT assume unseen code. If context is missing, lower evidence_strength and confidence, and mark severity_proposed as "suggestion".

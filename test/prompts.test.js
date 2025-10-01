@@ -175,5 +175,11 @@ describe('Prompts Module Tests', () => {
       expect(swiftPrompt).toContain('HomeView.swift');
       expect(qaWebPrompt).toContain('activatesHomePage.spec.js');
     });
+
+    it('should instruct reviewers on deletion context markers', () => {
+      const jsPrompt = buildLanguagePrompt('js');
+
+      expect(jsPrompt).toContain('Sections marked "Removed for context"');
+    });
   });
 });

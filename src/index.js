@@ -14,7 +14,7 @@ const LoggingService = require('./services/logging-service');
 
 // Version information - updated during build process
 const VERSION_INFO = {
-  version: '1.14.29',
+  version: '1.14.30',
   name: 'web-code-reviewer',
   description: 'Automated code review using LLM (Claude/OpenAI) for GitHub PRs'
 };
@@ -121,6 +121,10 @@ class GitHubActionsReviewer {
     core.info(`📝 Using ${this.inputs.language} review prompt`);
 
     const fullDiff = this.fileService.getFullDiff();
+    core.info(`============File Diff============`);
+    core.info(fullDiff);
+    core.info(`============File Diff============`);
+
     const llmResponse = await this.llmService.callLLM(reviewPrompt, fullDiff, changedFiles);
 
     if (this.loggingService.logLLMResponse(llmResponse)) {
