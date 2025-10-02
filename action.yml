@@ -43,7 +43,7 @@ inputs:
   ignore_patterns:
     description: 'Comma-separated file patterns to ignore during review (e.g., .json,.md,.test.js)'
     required: false
-    default: '.json,.md,.lock,.test.js,.spec.js'
+    default: '.json,.md,.lock,.test.js,.spec.js,.mock.ts,.mock.js,.test.ts,.test-suite.js,.test-suite.ts'
 
 runs:
   using: 'node20'

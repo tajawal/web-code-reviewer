@@ -97,7 +97,41 @@ const LANGUAGE_ROLE_CONFIGS = {
   }
 };
 
+const LANGUAGE_DEPENDENCY_CONFIGS = {
+  js: [
+    { file: 'package.json', label: 'package.json', parser: 'nodePackage' },
+    { file: 'package-lock.json', label: 'package-lock.json', maxLines: 40 },
+    { file: 'yarn.lock', label: 'yarn.lock', maxLines: 40 },
+    { file: 'pnpm-lock.yaml', label: 'pnpm-lock.yaml', maxLines: 40 }
+  ],
+  python: [
+    { file: 'pyproject.toml', label: 'pyproject.toml', maxLines: 60 },
+    { file: 'requirements.txt', label: 'requirements.txt', maxLines: 60 },
+    { file: 'Pipfile', label: 'Pipfile', maxLines: 60 },
+    { file: 'Pipfile.lock', label: 'Pipfile.lock', maxLines: 40 },
+    { file: 'poetry.lock', label: 'poetry.lock', maxLines: 40 }
+  ],
+  java: [
+    { file: 'pom.xml', label: 'pom.xml', maxLines: 80 },
+    { file: 'build.gradle', label: 'build.gradle', maxLines: 80 },
+    { file: 'build.gradle.kts', label: 'build.gradle.kts', maxLines: 80 },
+    { file: 'settings.gradle', label: 'settings.gradle', maxLines: 60 },
+    { file: 'gradle.properties', label: 'gradle.properties', maxLines: 40 }
+  ],
+  php: [
+    { file: 'composer.json', label: 'composer.json', parser: 'composerPackage' },
+    { file: 'composer.lock', label: 'composer.lock', maxLines: 40 }
+  ],
+  swift: [
+    { file: 'Package.swift', label: 'Package.swift', maxLines: 80 },
+    { file: 'Package.resolved', label: 'Package.resolved', maxLines: 40 },
+    { file: 'Podfile', label: 'Podfile', maxLines: 60 },
+    { file: 'Cartfile', label: 'Cartfile', maxLines: 60 }
+  ]
+};
+
 module.exports = {
   LANGUAGE_FILE_CONFIGS,
-  LANGUAGE_ROLE_CONFIGS
+  LANGUAGE_ROLE_CONFIGS,
+  LANGUAGE_DEPENDENCY_CONFIGS
 };

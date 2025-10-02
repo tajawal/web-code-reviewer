@@ -7,14 +7,15 @@ const { LLM_PROVIDERS, CONFIG } = require('../constants');
 const ContextService = require('./context-service');
 
 class LLMService {
-  constructor(provider, maxTokens, temperature, baseBranch) {
+  constructor(provider, maxTokens, temperature, baseBranch, language = CONFIG.DEFAULT_LANGUAGE) {
     this.provider = provider;
     this.maxTokens = maxTokens;
     this.temperature = temperature;
     this.chunkSize = CONFIG.DEFAULT_CHUNK_SIZE;
     this.maxConcurrentRequests = CONFIG.MAX_CONCURRENT_REQUESTS;
     this.batchDelayMs = CONFIG.BATCH_DELAY_MS;
-    this.contextService = new ContextService(baseBranch);
+    this.language = language || CONFIG.DEFAULT_LANGUAGE;
+    this.contextService = new ContextService(baseBranch, this.language);
   }
 
   /**

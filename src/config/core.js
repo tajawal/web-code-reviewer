@@ -14,7 +14,18 @@ const CORE_CONFIG = {
   TEMPERATURE: 0, // Optimal for consistent analytical responses
 
   // File filtering
-  IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js']
+  IGNORE_PATTERNS: [
+    '.json',
+    '.md',
+    '.lock',
+    '.test.js',
+    '.spec.js',
+    '.mock.ts',
+    '.mock.js',
+    '.test.ts',
+    '.test-suite.js',
+    '.test-suite.ts'
+  ]
 };
 
 module.exports = CORE_CONFIG;

@@ -29997,7 +29997,18 @@ const CORE_CONFIG = {
   TEMPERATURE: 0, // Optimal for consistent analytical responses
 
   // File filtering
-  IGNORE_PATTERNS: ['.json', '.md', '.lock', '.test.js', '.spec.js']
+  IGNORE_PATTERNS: [
+    '.json',
+    '.md',
+    '.lock',
+    '.test.js',
+    '.spec.js',
+    '.mock.ts',
+    '.mock.js',
+    '.test.ts',
+    '.test-suite.js',
+    '.test-suite.ts'
+  ]
 };
 
 module.exports = CORE_CONFIG;
@@ -30019,6 +30030,36 @@ const LABEL_CONFIG = {
 };
 
 module.exports = LABEL_CONFIG;
+
+
+/***/ }),
+
+/***/ 8717:
+/***/ ((module) => {
+
+/**
+ * Language alias configuration to map alternative identifiers to base analyzers
+ */
+
+const LANGUAGE_ALIASES = {
+  qa_web: 'js',
+  qa_android: 'java',
+  qa_backend: 'java'
+};
+
+function normalizeLanguage(language, defaultLanguage = 'js') {
+  if (!language) {
+    return defaultLanguage;
+  }
+
+  const normalized = language.toLowerCase();
+  return LANGUAGE_ALIASES[normalized] || normalized;
+}
+
+module.exports = {
+  LANGUAGE_ALIASES,
+  normalizeLanguage
+};
 
 
 /***/ }),
@@ -30125,9 +30166,43 @@ const LANGUAGE_ROLE_CONFIGS = {
   }
 };
 
+const LANGUAGE_DEPENDENCY_CONFIGS = {
+  js: [
+    { file: 'package.json', label: 'package.json', parser: 'nodePackage' },
+    { file: 'package-lock.json', label: 'package-lock.json', maxLines: 40 },
+    { file: 'yarn.lock', label: 'yarn.lock', maxLines: 40 },
+    { file: 'pnpm-lock.yaml', label: 'pnpm-lock.yaml', maxLines: 40 }
+  ],
+  python: [
+    { file: 'pyproject.toml', label: 'pyproject.toml', maxLines: 60 },
+    { file: 'requirements.txt', label: 'requirements.txt', maxLines: 60 },
+    { file: 'Pipfile', label: 'Pipfile', maxLines: 60 },
+    { file: 'Pipfile.lock', label: 'Pipfile.lock', maxLines: 40 },
+    { file: 'poetry.lock', label: 'poetry.lock', maxLines: 40 }
+  ],
+  java: [
+    { file: 'pom.xml', label: 'pom.xml', maxLines: 80 },
+    { file: 'build.gradle', label: 'build.gradle', maxLines: 80 },
+    { file: 'build.gradle.kts', label: 'build.gradle.kts', maxLines: 80 },
+    { file: 'settings.gradle', label: 'settings.gradle', maxLines: 60 },
+    { file: 'gradle.properties', label: 'gradle.properties', maxLines: 40 }
+  ],
+  php: [
+    { file: 'composer.json', label: 'composer.json', parser: 'composerPackage' },
+    { file: 'composer.lock', label: 'composer.lock', maxLines: 40 }
+  ],
+  swift: [
+    { file: 'Package.swift', label: 'Package.swift', maxLines: 80 },
+    { file: 'Package.resolved', label: 'Package.resolved', maxLines: 40 },
+    { file: 'Podfile', label: 'Podfile', maxLines: 60 },
+    { file: 'Cartfile', label: 'Cartfile', maxLines: 60 }
+  ]
+};
+
 module.exports = {
   LANGUAGE_FILE_CONFIGS,
-  LANGUAGE_ROLE_CONFIGS
+  LANGUAGE_ROLE_CONFIGS,
+  LANGUAGE_DEPENDENCY_CONFIGS
 };
 
 
@@ -30295,7 +30370,7 @@ const PROCESSING_CONFIG = __nccwpck_require__(7757);
 const LOGGING_CONFIG = __nccwpck_require__(2325);
 const LABEL_CONFIG = __nccwpck_require__(2057);
 const { APPROVAL_PHRASES, BLOCKING_PHRASES, CRITICAL_ISSUES } = __nccwpck_require__(4519);
-const { LANGUAGE_FILE_CONFIGS, LANGUAGE_ROLE_CONFIGS } = __nccwpck_require__(3859);
+const { LANGUAGE_FILE_CONFIGS, LANGUAGE_ROLE_CONFIGS, LANGUAGE_DEPENDENCY_CONFIGS } = __nccwpck_require__(3859);
 const LLM_PROVIDERS = __nccwpck_require__(5872);
 
 // Import prompt modules
@@ -30348,6 +30423,7 @@ module.exports = {
   LLM_PROVIDERS,
   LANGUAGE_FILE_CONFIGS,
   LANGUAGE_ROLE_CONFIGS,
+  LANGUAGE_DEPENDENCY_CONFIGS,
 
   // Prompt components and checks
   SHARED_PROMPT_COMPONENTS,
@@ -30358,6 +30434,603 @@ module.exports = {
   LANGUAGE_PROMPTS,
   getReviewPrompt,
   getLanguageForFile
+};
+
+
+/***/ }),
+
+/***/ 5666:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+const javascriptAnalyzer = __nccwpck_require__(9363);
+const pythonAnalyzer = __nccwpck_require__(5838);
+const javaAnalyzer = __nccwpck_require__(7032);
+const phpAnalyzer = __nccwpck_require__(6954);
+const swiftAnalyzer = __nccwpck_require__(2545);
+const { LANGUAGE_ALIASES, normalizeLanguage } = __nccwpck_require__(8717);
+
+const ANALYZERS = {
+  js: javascriptAnalyzer,
+  javascript: javascriptAnalyzer,
+  ts: javascriptAnalyzer,
+  typescript: javascriptAnalyzer,
+  python: pythonAnalyzer,
+  java: javaAnalyzer,
+  php: phpAnalyzer,
+  swift: swiftAnalyzer
+};
+
+function getLanguageAnalyzer(language) {
+  const normalized = normalizeLanguage(language);
+  return ANALYZERS[normalized] || javascriptAnalyzer;
+}
+
+module.exports = {
+  getLanguageAnalyzer,
+  normalizeLanguage,
+  LANGUAGE_ALIASES
+};
+
+
+/***/ }),
+
+/***/ 7032:
+/***/ ((module) => {
+
+function getImports(fileContent) {
+  const relationships = [];
+  const lines = fileContent.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const packageMatch = trimmed.match(/^package\s+([\w.]+);/);
+    if (packageMatch) {
+      relationships.push(`Package: ${packageMatch[1]}`);
+      continue;
+    }
+
+    const importMatch = trimmed.match(/^import\s+([\w.*]+);/);
+    if (importMatch) {
+      relationships.push(`Import: ${importMatch[1]}`);
+    }
+  }
+
+  return relationships.slice(0, 8);
+}
+
+function getExports(fileContent) {
+  return extractTypesAndMethods(fileContent).slice(0, 6);
+}
+
+function getDefinitions(fileContent) {
+  return extractTypesAndMethods(fileContent).slice(0, 8);
+}
+
+function extractTypesAndMethods(fileContent) {
+  const results = [];
+  const lines = fileContent.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    let match = trimmed.match(
+      /^(?:public|protected|private)?\s*(?:abstract\s+|final\s+)?(class|interface|enum|record)\s+(\w+)/
+    );
+    if (match) {
+      results.push(`Type: ${match[1]} ${match[2]}`);
+      continue;
+    }
+
+    match = trimmed.match(
+      /^(?:public|protected|private|static|final|abstract|synchronized|default)\s+[\w<>[\]]+\s+(\w+)\s*\([^;]*\)/
+    );
+    if (match) {
+      results.push(`Method: ${match[1]}(...)`);
+    }
+  }
+
+  return results;
+}
+
+module.exports = {
+  getImports,
+  getExports,
+  getDefinitions
+};
+
+
+/***/ }),
+
+/***/ 9363:
+/***/ ((module) => {
+
+function getImports(fileContent) {
+  const relationships = [];
+  const lines = fileContent.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (trimmed.match(/^import\s+.*\s+from\s+['"]([^'"]+)['"]/)) {
+      const match = trimmed.match(/^import\s+.*\s+from\s+['"]([^'"]+)['"]/);
+      if (match) {
+        relationships.push(`Import: ${match[1]} (${trimmed})`);
+      }
+    } else if (trimmed.match(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/)) {
+      const match = trimmed.match(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+      if (match) {
+        relationships.push(`Require: ${match[1]} (${trimmed})`);
+      }
+    } else if (trimmed.match(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/)) {
+      const match = trimmed.match(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+      if (match) {
+        relationships.push(`Dynamic Import: ${match[1]} (${trimmed})`);
+      }
+    }
+  }
+
+  return relationships.slice(0, 8);
+}
+
+function getExports(fileContent) {
+  const relationships = [];
+  const lines = fileContent.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (trimmed.match(/^export\s+(default\s+)?(function|class|const|let|var|interface|type)/)) {
+      relationships.push(`Export: ${trimmed}`);
+    } else if (trimmed.match(/module\.exports\s*=/)) {
+      relationships.push(`Module Export: ${trimmed}`);
+    } else if (trimmed.match(/^export\s*{/)) {
+      relationships.push(`Named Export: ${trimmed}`);
+    }
+  }
+
+  return relationships.slice(0, 6);
+}
+
+function getDefinitions(fileContent) {
+  const definitions = [];
+  const lines = fileContent.split('\n');
+  let currentFunction = null;
+  let braceCount = 0;
+  let functionLines = [];
+  let inFunction = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.match(/^(export\s+)?(async\s+)?function\s+\w+/)) {
+      if (currentFunction) {
+        definitions.push(formatCodeDefinition('Function', currentFunction, functionLines));
+      }
+      currentFunction = trimmed;
+      functionLines = [trimmed];
+      inFunction = true;
+      braceCount = 0;
+    } else if (trimmed.match(/^(export\s+)?class\s+\w+/)) {
+      if (currentFunction) {
+        definitions.push(formatCodeDefinition('Function', currentFunction, functionLines));
+        currentFunction = null;
+        inFunction = false;
+      }
+      const classSample = extractClassSample(lines, i);
+      definitions.push(`Class: ${trimmed}\n${classSample}`);
+    } else if (trimmed.match(/^(export\s+)?(interface|type)\s+\w+/)) {
+      if (currentFunction) {
+        definitions.push(formatCodeDefinition('Function', currentFunction, functionLines));
+        currentFunction = null;
+        inFunction = false;
+      }
+      const typeSample = extractTypeSample(lines, i);
+      definitions.push(`Type: ${trimmed}\n${typeSample}`);
+    } else if (trimmed.match(/^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s+)?\(/)) {
+      if (currentFunction) {
+        definitions.push(formatCodeDefinition('Function', currentFunction, functionLines));
+        currentFunction = null;
+        inFunction = false;
+      }
+      const arrowFunctionSample = extractArrowFunctionSample(lines, i);
+      definitions.push(`Function Expression: ${trimmed}\n${arrowFunctionSample}`);
+    } else if (inFunction && currentFunction) {
+      functionLines.push(line);
+
+      for (const char of line) {
+        if (char === '{') braceCount++;
+        if (char === '}') braceCount--;
+      }
+
+      if (functionLines.length > 20) {
+        functionLines.push('  // ... (truncated for context)');
+        definitions.push(formatCodeDefinition('Function', currentFunction, functionLines));
+        currentFunction = null;
+        inFunction = false;
+        functionLines = [];
+      } else if (braceCount === 0 && functionLines.length > 1) {
+        definitions.push(formatCodeDefinition('Function', currentFunction, functionLines));
+        currentFunction = null;
+        inFunction = false;
+        functionLines = [];
+      }
+    }
+  }
+
+  if (currentFunction && functionLines.length > 0) {
+    definitions.push(formatCodeDefinition('Function', currentFunction, functionLines));
+  }
+
+  return definitions.slice(0, 8);
+}
+
+function formatCodeDefinition(type, signature, lines) {
+  const body = lines.slice(1, 6).join('\n');
+  const truncated = lines.length > 6 ? '\n  // ... (truncated)' : '';
+  return `${type}: ${signature}\n${body}${truncated}`;
+}
+
+function extractClassSample(lines, startIndex) {
+  const sample = [];
+  let braceCount = 0;
+  let methodCount = 0;
+
+  for (let i = startIndex; i < lines.length && methodCount < 3; i++) {
+    const line = lines[i];
+    sample.push(line);
+
+    for (const char of line) {
+      if (char === '{') braceCount++;
+      if (char === '}') braceCount--;
+    }
+
+    if (line.trim().match(/^\w+\s*\([^)]*\)\s*{/) && braceCount > 1) {
+      methodCount++;
+    }
+
+    if (braceCount === 0 && i > startIndex) break;
+  }
+
+  return sample.join('\n');
+}
+
+function extractTypeSample(lines, startIndex) {
+  const sample = [];
+  let braceCount = 0;
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i];
+    sample.push(line);
+
+    for (const char of line) {
+      if (char === '{') braceCount++;
+      if (char === '}') braceCount--;
+    }
+
+    if (braceCount === 0 && i > startIndex) break;
+
+    if (sample.length > 10) {
+      sample.push('  // ... (truncated)');
+      break;
+    }
+  }
+
+  return sample.join('\n');
+}
+
+function extractArrowFunctionSample(lines, startIndex) {
+  const sample = [];
+  let braceCount = 0;
+  let parenCount = 0;
+  let inParams = false;
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i];
+    sample.push(line);
+
+    for (const char of line) {
+      if (char === '(') {
+        parenCount++;
+        inParams = true;
+      }
+      if (char === ')') {
+        parenCount--;
+        if (parenCount === 0) inParams = false;
+      }
+      if (!inParams) {
+        if (char === '{') braceCount++;
+        if (char === '}') braceCount--;
+      }
+    }
+
+    if (braceCount === 0 && !inParams && i > startIndex) break;
+
+    if (sample.length > 8) {
+      sample.push('  // ... (truncated)');
+      break;
+    }
+  }
+
+  return sample.join('\n');
+}
+
+module.exports = {
+  getImports,
+  getExports,
+  getDefinitions
+};
+
+
+/***/ }),
+
+/***/ 6954:
+/***/ ((module) => {
+
+function getImports(fileContent) {
+  const relationships = [];
+  const lines = fileContent.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    let match = trimmed.match(/^use\s+([^;]+);/i);
+    if (match) {
+      relationships.push(`Use: ${match[1]}`);
+      continue;
+    }
+
+    match = trimmed.match(
+      /^(require|require_once|include|include_once)\s*\(?['"]([^'"]+)['"]\)?\s*;/i
+    );
+    if (match) {
+      relationships.push(`Include: ${match[2]} (${match[1]})`);
+    }
+  }
+
+  return relationships.slice(0, 8);
+}
+
+function getExports(fileContent) {
+  return extractDeclarations(fileContent).slice(0, 6);
+}
+
+function getDefinitions(fileContent) {
+  return extractDeclarations(fileContent).slice(0, 8);
+}
+
+function extractDeclarations(fileContent) {
+  const results = [];
+  const lines = fileContent.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    let match = trimmed.match(/^(?:final\s+|abstract\s+)?class\s+(\w+)/i);
+    if (match) {
+      results.push(`Class: ${match[1]}`);
+      continue;
+    }
+
+    match = trimmed.match(/^(?:interface|trait)\s+(\w+)/i);
+    if (match) {
+      results.push(`Type: ${match[1]}`);
+      continue;
+    }
+
+    match = trimmed.match(
+      /^(?:public|protected|private|static|final|abstract)?\s*function\s+(\w+)/i
+    );
+    if (match) {
+      results.push(`Function: ${match[1]}()`);
+    }
+  }
+
+  return results;
+}
+
+module.exports = {
+  getImports,
+  getExports,
+  getDefinitions
+};
+
+
+/***/ }),
+
+/***/ 5838:
+/***/ ((module) => {
+
+function getImports(fileContent) {
+  const relationships = [];
+  const lines = fileContent.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    let match = trimmed.match(/^import\s+([\w.]+)(\s+as\s+\w+)?/);
+    if (match) {
+      relationships.push(`Import: ${match[1]}`);
+      continue;
+    }
+
+    match = trimmed.match(/^from\s+([\w.]+)\s+import\s+(.+)/);
+    if (match) {
+      relationships.push(`From ${match[1]} import ${match[2]}`);
+    }
+  }
+
+  return relationships.slice(0, 8);
+}
+
+function getExports(fileContent) {
+  const relationships = [];
+  const lines = fileContent.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    if (trimmed.match(/^class\s+(\w+)/)) {
+      const match = trimmed.match(/^class\s+(\w+)/);
+      if (match) {
+        relationships.push(`Class: ${match[1]}`);
+      }
+    } else if (trimmed.match(/^(?:async\s+)?def\s+(\w+)/)) {
+      const match = trimmed.match(/^(?:async\s+)?def\s+(\w+)/);
+      if (match) {
+        relationships.push(`Function: ${match[1]}()`);
+      }
+    }
+  }
+
+  return relationships.slice(0, 6);
+}
+
+function getDefinitions(fileContent) {
+  const definitions = [];
+  const lines = fileContent.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    if (trimmed.match(/^(async\s+)?def\s+\w+/)) {
+      const body = extractPythonBody(lines, i);
+      definitions.push(body ? `Function: ${trimmed}\n${body}` : `Function: ${trimmed}`);
+    } else if (trimmed.match(/^class\s+\w+/)) {
+      const body = extractPythonBody(lines, i);
+      definitions.push(body ? `Class: ${trimmed}\n${body}` : `Class: ${trimmed}`);
+    }
+  }
+
+  return definitions.slice(0, 8);
+}
+
+function extractPythonBody(lines, definitionIndex, maxLines = 6) {
+  const baseIndent = getIndentationWidth(lines[definitionIndex]);
+  const sample = [];
+
+  for (let i = definitionIndex + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) {
+      continue;
+    }
+
+    const indent = getIndentationWidth(line);
+    if (indent <= baseIndent) {
+      break;
+    }
+
+    sample.push(line);
+
+    if (sample.length >= maxLines) {
+      sample.push('  # ... (truncated)');
+      break;
+    }
+  }
+
+  return sample.join('\n');
+}
+
+function getIndentationWidth(line) {
+  if (!line) {
+    return 0;
+  }
+  const match = line.match(/^\s*/);
+  return match ? match[0].length : 0;
+}
+
+module.exports = {
+  getImports,
+  getExports,
+  getDefinitions
+};
+
+
+/***/ }),
+
+/***/ 2545:
+/***/ ((module) => {
+
+function getImports(fileContent) {
+  const relationships = [];
+  const lines = fileContent.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const match = trimmed.match(/^import\s+([A-Za-z0-9_.]+)/);
+    if (match) {
+      relationships.push(`Import: ${match[1]}`);
+    }
+  }
+
+  return relationships.slice(0, 8);
+}
+
+function getExports(fileContent) {
+  return extractDeclarations(fileContent).slice(0, 6);
+}
+
+function getDefinitions(fileContent) {
+  return extractDeclarations(fileContent).slice(0, 8);
+}
+
+function extractDeclarations(fileContent) {
+  const results = [];
+  const lines = fileContent.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    let match = trimmed.match(
+      /^(?:public|internal|fileprivate|private|open)?\s*(class|struct|enum|protocol|actor)\s+(\w+)/
+    );
+    if (match) {
+      results.push(`Type: ${match[1]} ${match[2]}`);
+      continue;
+    }
+
+    match = trimmed.match(/^(?:public|internal|fileprivate|private|open)?\s*func\s+(\w+)/);
+    if (match) {
+      results.push(`Function: ${match[1]}()`);
+    }
+  }
+
+  return results;
+}
+
+module.exports = {
+  getImports,
+  getExports,
+  getDefinitions
 };
 
 
@@ -31079,6 +31752,7 @@ Determinism & Output Contract
   scopeAndExclusions: `Scope & Exclusions
 - Review ONLY the actual file changes shown in the diffs/new files at the bottom of the prompt
 - Context files (under "SEMANTIC CODE", "FILE RELATIONSHIPS", etc.) are for reference only - DO NOT review these
+- Sections marked "Removed for context" expose deleted lines for awareness; raise an issue only when the removal itself introduces a risk.
 - Focus ONLY on critical risks: exploitable security flaws, meaningful performance regressions, memory/resource leaks, unsafe patterns, architectural violations.
 - Ignore style/formatting/naming/import order/linters/auto-formatters.
 - Do NOT assume unseen code. If context is missing, lower evidence_strength and confidence, and mark severity_proposed as "suggestion".
@@ -31197,6 +31871,9 @@ module.exports = SHARED_PROMPT_COMPONENTS;
 const { execSync } = __nccwpck_require__(5317);
 const core = __nccwpck_require__(7484);
 const CONTEXT_CONFIG = __nccwpck_require__(2335);
+const CORE_CONFIG = __nccwpck_require__(8005);
+const { getLanguageAnalyzer, normalizeLanguage } = __nccwpck_require__(5666);
+const { LANGUAGE_FILE_CONFIGS, LANGUAGE_DEPENDENCY_CONFIGS } = __nccwpck_require__(3859);
 
 /**
  * Optimized shell command execution with better error handling
@@ -31237,8 +31914,32 @@ class ShellExecutor {
 }
 
 class ContextService {
-  constructor(baseBranch) {
+  constructor(baseBranch, language = CORE_CONFIG.DEFAULT_LANGUAGE) {
     this.baseBranch = baseBranch;
+    this.language = normalizeLanguage(language || CORE_CONFIG.DEFAULT_LANGUAGE || 'js');
+  }
+
+  /**
+   * Infer language from file extension with fallback to configured language
+   */
+  detectLanguageFromPath(filePath) {
+    if (!filePath) {
+      return this.language || 'js';
+    }
+
+    const lowerPath = filePath.toLowerCase();
+    const matchedEntry = Object.entries(LANGUAGE_FILE_CONFIGS).find(([, config]) => {
+      if (!config || !config.extensions) {
+        return false;
+      }
+      return config.extensions.some(extension => lowerPath.endsWith(extension.toLowerCase()));
+    });
+
+    if (matchedEntry) {
+      return normalizeLanguage(matchedEntry[0]);
+    }
+
+    return this.language || 'js';
   }
 
   /**
@@ -31284,6 +31985,145 @@ class ContextService {
   }
 
   /**
+   * Build dependency sections for the provided language
+   */
+  buildDependencySectionsForLanguage(language) {
+    const normalized = normalizeLanguage(language);
+    const configs = LANGUAGE_DEPENDENCY_CONFIGS[normalized] || [];
+    const sections = [];
+
+    for (const config of configs) {
+      const section = this.renderDependencySection(config);
+      if (section) {
+        sections.push(section);
+      }
+    }
+
+    return sections;
+  }
+
+  /**
+   * Safely read dependency file content
+   */
+  readDependencyFile(filePath, maxLines) {
+    if (!filePath) {
+      return null;
+    }
+
+    try {
+      const escapedPath = this.escapeFilePath(filePath);
+      const command = maxLines
+        ? `if [ -f ${escapedPath} ]; then head -n ${maxLines} ${escapedPath}; else true; fi`
+        : `if [ -f ${escapedPath} ]; then cat ${escapedPath}; else true; fi`;
+
+      const content = ShellExecutor.execute(command);
+      if (!content || !content.trim()) {
+        return null;
+      }
+
+      return content.trimEnd();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Render dependency section based on configuration
+   */
+  renderDependencySection(config) {
+    const content = this.readDependencyFile(config.file, config.maxLines);
+    if (!content) {
+      return null;
+    }
+
+    if (config.parser === 'nodePackage') {
+      return this.renderNodePackageSection(content);
+    }
+
+    if (config.parser === 'composerPackage') {
+      return this.renderComposerPackageSection(content);
+    }
+
+    const label = config.label || config.file;
+    const linesNote = config.maxLines ? ` (first ${config.maxLines} lines)` : '';
+    return `📄 ${label}${linesNote}:\n${content}`.trimEnd();
+  }
+
+  /**
+   * Provide compact summary for package.json dependencies
+   */
+  renderNodePackageSection(content) {
+    try {
+      const packageJson = JSON.parse(content);
+      let summary = '📦 package.json\n';
+
+      if (packageJson.name) {
+        summary += `  Name: ${packageJson.name}\n`;
+      }
+
+      if (packageJson.version) {
+        summary += `  Version: ${packageJson.version}\n`;
+      }
+
+      summary += `  Project Type: ${packageJson.type || 'CommonJS'}\n`;
+
+      summary += this.formatDependencyList('Dependencies', packageJson.dependencies);
+      summary += this.formatDependencyList('Dev Dependencies', packageJson.devDependencies);
+
+      return summary.trimEnd();
+    } catch {
+      return `📦 package.json (raw):\n${content}`.trimEnd();
+    }
+  }
+
+  /**
+   * Provide compact summary for composer.json dependencies
+   */
+  renderComposerPackageSection(content) {
+    try {
+      const composerJson = JSON.parse(content);
+      let summary = '📦 composer.json\n';
+
+      if (composerJson.name) {
+        summary += `  Name: ${composerJson.name}\n`;
+      }
+
+      if (composerJson.type) {
+        summary += `  Type: ${composerJson.type}\n`;
+      }
+
+      summary += this.formatDependencyList('Require', composerJson.require);
+      summary += this.formatDependencyList('Require Dev', composerJson['require-dev']);
+
+      return summary.trimEnd();
+    } catch {
+      return `📦 composer.json (raw):\n${content}`.trimEnd();
+    }
+  }
+
+  /**
+   * Format dependency map into readable list
+   */
+  formatDependencyList(title, deps, limit = 8) {
+    if (!deps || Object.keys(deps).length === 0) {
+      return '';
+    }
+
+    const entries = Object.entries(deps);
+    let result = `  ${title} (${entries.length}):\n`;
+
+    entries.slice(0, limit).forEach(([name, version]) => {
+      result += `    - ${name}: ${version}\n`;
+    });
+
+    if (entries.length > limit) {
+      result += `    ... +${entries.length - limit} more\n`;
+    }
+
+    return result;
+  }
+
+  /**
    * Get dependency context (package.json, imports)
    */
   getDependencyContext() {
@@ -31293,34 +32133,33 @@ class ContextService {
 
     return this.executeWithTiming('dependencies', () => {
       try {
-        let context = '--- Dependencies Context ---\n';
+        const normalizedLanguage = this.language || CORE_CONFIG.DEFAULT_LANGUAGE || 'js';
+        let sections = this.buildDependencySectionsForLanguage(normalizedLanguage);
+        let fallbackLanguage = null;
 
-        // Get package.json with better formatting
-        try {
-          const packageJsonRaw = ShellExecutor.execute('cat package.json');
-          const packageJson = JSON.parse(packageJsonRaw);
-
-          context += '📦 Project Type:\n';
-          context += `  ${packageJson.type || 'CommonJS'}\n`;
-        } catch {
-          // Fallback to raw package.json
-          const packageJson = ShellExecutor.execute('cat package.json');
-          context += `📦 Package.json (raw):\n${packageJson}\n`;
-        }
-
-        // Get lock file info if available
-        try {
-          const lockFile = ShellExecutor.execute(
-            'ls -la package-lock.json yarn.lock 2>/dev/null | head -1'
-          );
-          if (lockFile.trim()) {
-            context += `\n🔒 Lock file: ${lockFile.trim()}\n`;
+        if (sections.length === 0 && normalizedLanguage !== 'js') {
+          sections = this.buildDependencySectionsForLanguage('js');
+          if (sections.length > 0) {
+            fallbackLanguage = 'js';
           }
-        } catch {
-          // No lock file found
         }
 
-        context += '\n--- End Dependencies ---\n';
+        let context = '--- Dependencies Context ---\n';
+        context += `🔤 Language preference: ${normalizedLanguage}\n`;
+
+        if (fallbackLanguage) {
+          context += `ℹ️ No dependency manifests detected for ${normalizedLanguage}. Falling back to ${fallbackLanguage}.\n\n`;
+        } else {
+          context += '\n';
+        }
+
+        if (sections.length === 0) {
+          context += 'No dependency manifests detected.\n';
+        } else {
+          context += `${sections.join('\n\n')}\n`;
+        }
+
+        context += '--- End Dependencies ---\n';
         return context;
       } catch (error) {
         core.warning(`⚠️  Could not get dependency context: ${error.message}`);
@@ -31384,8 +32223,11 @@ class ContextService {
               continue;
             }
 
+            const fileLanguage = this.detectLanguageFromPath(file);
+            const analyzer = getLanguageAnalyzer(fileLanguage);
+
             // Focus only on direct imports and exports (most relevant for review)
-            const incomingRelationships = this.analyzeIncomingRelationships(fileContent);
+            const incomingRelationships = analyzer.getImports(fileContent) || [];
             if (incomingRelationships.length > 0) {
               context += '  📥 Imports:\n';
               incomingRelationships.slice(0, 5).forEach(rel => {
@@ -31394,7 +32236,7 @@ class ContextService {
               });
             }
 
-            const outgoingRelationships = this.analyzeOutgoingRelationships(fileContent);
+            const outgoingRelationships = analyzer.getExports(fileContent) || [];
             if (outgoingRelationships.length > 0) {
               context += '  📤 Exports:\n';
               outgoingRelationships.slice(0, 5).forEach(rel => {
@@ -31447,8 +32289,11 @@ class ContextService {
               continue;
             }
 
+            const fileLanguage = this.detectLanguageFromPath(file);
+            const analyzer = getLanguageAnalyzer(fileLanguage);
+
             // Extract only key function/class definitions (most relevant for review)
-            const definitions = this.extractCodeDefinitions(fileContent);
+            const definitions = analyzer.getDefinitions(fileContent) || [];
             if (definitions.length > 0) {
               context += '  📝 Key Definitions:\n';
               definitions.slice(0, 5).forEach(def => {
@@ -31776,269 +32621,6 @@ class ContextService {
     };
     return emojiMap[sectionType.toLowerCase()] || '📋';
   }
-
-  /**
-   * Extract code definitions (functions, classes, interfaces)
-   */
-  extractCodeDefinitions(fileContent) {
-    const definitions = [];
-    const lines = fileContent.split('\n');
-    let currentFunction = null;
-    let braceCount = 0;
-    let functionLines = [];
-    let inFunction = false;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-
-      // Function definitions
-      if (trimmed.match(/^(export\s+)?(async\s+)?function\s+\w+/)) {
-        if (currentFunction) {
-          // Save previous function
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-        }
-        currentFunction = trimmed;
-        functionLines = [trimmed];
-        inFunction = true;
-        braceCount = 0;
-      }
-      // Class definitions
-      else if (trimmed.match(/^(export\s+)?class\s+\w+/)) {
-        if (currentFunction) {
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-          currentFunction = null;
-          inFunction = false;
-        }
-        const classSample = this.extractClassSample(lines, i);
-        definitions.push(`Class: ${trimmed}\n${classSample}`);
-      }
-      // Interface/Type definitions
-      else if (trimmed.match(/^(export\s+)?(interface|type)\s+\w+/)) {
-        if (currentFunction) {
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-          currentFunction = null;
-          inFunction = false;
-        }
-        const typeSample = this.extractTypeSample(lines, i);
-        definitions.push(`Type: ${trimmed}\n${typeSample}`);
-      }
-      // Const/Let/Var with function assignment
-      else if (trimmed.match(/^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s+)?\(/)) {
-        if (currentFunction) {
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-          currentFunction = null;
-          inFunction = false;
-        }
-        const arrowFunctionSample = this.extractArrowFunctionSample(lines, i);
-        definitions.push(`Function Expression: ${trimmed}\n${arrowFunctionSample}`);
-      }
-      // Track function body
-      else if (inFunction && currentFunction) {
-        functionLines.push(line);
-
-        // Count braces to detect function end
-        for (const char of line) {
-          if (char === '{') braceCount++;
-          if (char === '}') braceCount--;
-        }
-
-        // Limit function body size to prevent token explosion (check before function end)
-        if (functionLines.length > 20) {
-          functionLines.push('  // ... (truncated for context)');
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-          currentFunction = null;
-          inFunction = false;
-          functionLines = [];
-        }
-        // Function ended (check after truncation)
-        else if (braceCount === 0 && functionLines.length > 1) {
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-          currentFunction = null;
-          inFunction = false;
-          functionLines = [];
-        }
-      }
-    }
-
-    // Handle last function if exists
-    if (currentFunction && functionLines.length > 0) {
-      definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-    }
-
-    return definitions.slice(0, 8); // Limit to 8 most important to control token usage
-  }
-
-  /**
-   * Format code definition with signature and sample body
-   */
-  formatCodeDefinition(type, signature, lines) {
-    const body = lines.slice(1, 6).join('\n'); // First 5 lines of body
-    const truncated = lines.length > 6 ? '\n  // ... (truncated)' : '';
-    return `${type}: ${signature}\n${body}${truncated}`;
-  }
-
-  /**
-   * Extract class sample (constructor and first few methods)
-   */
-  extractClassSample(lines, startIndex) {
-    const sample = [];
-    let braceCount = 0;
-    let methodCount = 0;
-
-    for (let i = startIndex; i < lines.length && methodCount < 3; i++) {
-      const line = lines[i];
-      sample.push(line);
-
-      for (const char of line) {
-        if (char === '{') braceCount++;
-        if (char === '}') braceCount--;
-      }
-
-      // Count methods
-      if (line.trim().match(/^\w+\s*\([^)]*\)\s*{/) && braceCount > 1) {
-        methodCount++;
-      }
-
-      // Class ended
-      if (braceCount === 0 && i > startIndex) break;
-    }
-
-    return sample.join('\n');
-  }
-
-  /**
-   * Extract type/interface sample
-   */
-  extractTypeSample(lines, startIndex) {
-    const sample = [];
-    let braceCount = 0;
-
-    for (let i = startIndex; i < lines.length; i++) {
-      const line = lines[i];
-      sample.push(line);
-
-      for (const char of line) {
-        if (char === '{') braceCount++;
-        if (char === '}') braceCount--;
-      }
-
-      // Type ended
-      if (braceCount === 0 && i > startIndex) break;
-
-      // Limit size
-      if (sample.length > 10) {
-        sample.push('  // ... (truncated)');
-        break;
-      }
-    }
-
-    return sample.join('\n');
-  }
-
-  /**
-   * Extract arrow function sample
-   */
-  extractArrowFunctionSample(lines, startIndex) {
-    const sample = [];
-    let braceCount = 0;
-    let parenCount = 0;
-    let inParams = false;
-
-    for (let i = startIndex; i < lines.length; i++) {
-      const line = lines[i];
-      sample.push(line);
-
-      for (const char of line) {
-        if (char === '(') {
-          parenCount++;
-          inParams = true;
-        }
-        if (char === ')') {
-          parenCount--;
-          if (parenCount === 0) inParams = false;
-        }
-        if (!inParams) {
-          if (char === '{') braceCount++;
-          if (char === '}') braceCount--;
-        }
-      }
-
-      // Function ended (single line or multi-line)
-      if (braceCount === 0 && !inParams && i > startIndex) break;
-
-      // Limit size
-      if (sample.length > 8) {
-        sample.push('  // ... (truncated)');
-        break;
-      }
-    }
-
-    return sample.join('\n');
-  }
-
-  /**
-   * Analyze incoming relationships (imports/requires)
-   */
-  analyzeIncomingRelationships(fileContent) {
-    const relationships = [];
-    const lines = fileContent.split('\n');
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      // ES6 imports
-      if (trimmed.match(/^import\s+.*\s+from\s+['"]([^'"]+)['"]/)) {
-        const match = trimmed.match(/^import\s+.*\s+from\s+['"]([^'"]+)['"]/);
-        if (match) {
-          relationships.push(`Import: ${match[1]} (${trimmed})`);
-        }
-      }
-      // CommonJS requires
-      else if (trimmed.match(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/)) {
-        const match = trimmed.match(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/);
-        if (match) {
-          relationships.push(`Require: ${match[1]} (${trimmed})`);
-        }
-      }
-      // Dynamic imports
-      else if (trimmed.match(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/)) {
-        const match = trimmed.match(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/);
-        if (match) {
-          relationships.push(`Dynamic Import: ${match[1]} (${trimmed})`);
-        }
-      }
-    }
-
-    return relationships.slice(0, 8); // Limit to 8 most important
-  }
-
-  /**
-   * Analyze outgoing relationships (exports)
-   */
-  analyzeOutgoingRelationships(fileContent) {
-    const relationships = [];
-    const lines = fileContent.split('\n');
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      // ES6 exports
-      if (trimmed.match(/^export\s+(default\s+)?(function|class|const|let|var|interface|type)/)) {
-        relationships.push(`Export: ${trimmed}`);
-      }
-      // CommonJS exports
-      else if (trimmed.match(/module\.exports\s*=/)) {
-        relationships.push(`Module Export: ${trimmed}`);
-      }
-      // Named exports
-      else if (trimmed.match(/^export\s*{/)) {
-        relationships.push(`Named Export: ${trimmed}`);
-      }
-    }
-
-    return relationships.slice(0, 6); // Limit to 6 most important
-  }
 }
 
 module.exports = ContextService;
@@ -32130,8 +32712,9 @@ class FileService {
 
       // Add file structure context
       const fileStructure = this.getFileStructureContext(filePath);
+      const formattedDiff = this.formatDeletionBlocks(diff, filePath);
 
-      return `${fileStructure}\n${diff}`;
+      return `${fileStructure}\n${formattedDiff}`;
     } catch (error) {
       core.warning(`⚠️  Could not get diff for ${filePath}: ${error.message}`);
       return '';
@@ -32195,6 +32778,54 @@ package\\b|import\\b|@(?!State|Binding|ObservedObject|StateObject)[_A-Za-z]\\w*|
       // If structure extraction fails, continue without it
       return `--- File: ${filePath} ---\n`;
     }
+  }
+
+  /**
+   * Add explicit context markers around deleted blocks so reviewers know when removals appear
+   */
+  formatDeletionBlocks(diff, filePath) {
+    if (!diff) {
+      return diff;
+    }
+
+    const lines = diff.split('\n');
+    const result = [];
+    let inDeletionBlock = false;
+    let hasDeletion = false;
+    let hasAddition = false;
+
+    for (const line of lines) {
+      const isDeletionLine = line.startsWith('-') && !line.startsWith('--- ');
+      const isAdditionLine = line.startsWith('+') && !line.startsWith('+++ ');
+
+      if (isDeletionLine && !inDeletionBlock) {
+        result.push('--- Removed for context (flag only if the deletion is risky) ---');
+        inDeletionBlock = true;
+      } else if (!isDeletionLine && inDeletionBlock) {
+        result.push('--- End removed context ---');
+        inDeletionBlock = false;
+      }
+
+      if (isDeletionLine) {
+        hasDeletion = true;
+      }
+
+      if (isAdditionLine) {
+        hasAddition = true;
+      }
+
+      result.push(line);
+    }
+
+    if (inDeletionBlock) {
+      result.push('--- End removed context ---');
+    }
+
+    if (hasDeletion && !hasAddition) {
+      core.info(`ℹ️  Diff for ${filePath} contains only deletions (kept as context).`);
+    }
+
+    return result.join('\n');
   }
 
   /**
@@ -32640,14 +33271,15 @@ const { LLM_PROVIDERS, CONFIG } = __nccwpck_require__(9992);
 const ContextService = __nccwpck_require__(6819);
 
 class LLMService {
-  constructor(provider, maxTokens, temperature, baseBranch) {
+  constructor(provider, maxTokens, temperature, baseBranch, language = CONFIG.DEFAULT_LANGUAGE) {
     this.provider = provider;
     this.maxTokens = maxTokens;
     this.temperature = temperature;
     this.chunkSize = CONFIG.DEFAULT_CHUNK_SIZE;
     this.maxConcurrentRequests = CONFIG.MAX_CONCURRENT_REQUESTS;
     this.batchDelayMs = CONFIG.BATCH_DELAY_MS;
-    this.contextService = new ContextService(baseBranch);
+    this.language = language || CONFIG.DEFAULT_LANGUAGE;
+    this.contextService = new ContextService(baseBranch, this.language);
   }
 
   /**
@@ -35970,7 +36602,7 @@ module.exports = parseParams
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.29","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","node-fetch":"^3.3.2"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
+module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.30","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","node-fetch":"^3.3.2"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
 
 /***/ })
 
@@ -36112,7 +36744,7 @@ const LoggingService = __nccwpck_require__(8689);
 
 // Version information - updated during build process
 const VERSION_INFO = {
-  version: '1.14.29',
+  version: '1.14.30',
   name: 'web-code-reviewer',
   description: 'Automated code review using LLM (Claude/OpenAI) for GitHub PRs'
 };
@@ -36182,7 +36814,8 @@ class GitHubActionsReviewer {
       this.inputs.provider,
       this.inputs.maxTokens,
       this.inputs.temperature,
-      this.baseBranch
+      this.baseBranch,
+      this.inputs.language
     );
   }
 
@@ -36216,9 +36849,11 @@ class GitHubActionsReviewer {
 
     // Get language-specific review prompt
     const reviewPrompt = getReviewPrompt(this.inputs.language);
+
     core.info(`📝 Using ${this.inputs.language} review prompt`);
 
     const fullDiff = this.fileService.getFullDiff();
+
     const llmResponse = await this.llmService.callLLM(reviewPrompt, fullDiff, changedFiles);
 
     if (this.loggingService.logLLMResponse(llmResponse)) {

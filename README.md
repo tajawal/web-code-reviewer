@@ -208,14 +208,14 @@ jobs:
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `llm_provider` | LLM provider to use (`claude` or `openai`) | No | `claude` |
-| `language` | Programming language for code review (`js`, `python`, `java`, `php`) | No | `js` |
+| `language` | Programming language for code review (`js`, `python`, `java`, `php`, `swift`, `qa_web`, `qa_android`, `qa_backend`) | No | `js` |
 | `path_to_files` | Comma-separated paths to files to review (e.g., `packages/`, `src/`, `components/`) | No | `packages/` |
 | `base_branch` | Base branch to compare against (auto-detected from PR if not specified) | No | `develop` |
 | `max_tokens` | Maximum tokens for LLM response (recommended: 3000-5000 for comprehensive reviews) | No | `3000` |
 | `temperature` | Temperature for LLM response (0.0-1.0, recommended: 0 for analytical responses) | No | `0` |
 | `department` | Department name for logging purposes | No | `web` |
 | `team` | Team name for logging purposes | **Yes** | - |
-| `ignore_patterns` | Comma-separated file patterns to ignore during review (e.g., `.json,.md,.test.js`) | No | `.json,.md,.lock,.test.js,.spec.js` |
+| `ignore_patterns` | Comma-separated file suffixes to ignore during review (e.g., `.json,.md,.test.ts`) | No | `.json,.md,.lock,.test.js,.spec.js,.mock.ts,.mock.js,.test.ts` |
 | `openai_api_key` | OpenAI API key (required if provider is `openai`) | No | - |
 | `claude_api_key` | Claude API key (required if provider is `claude`) | No | - |
 
@@ -300,6 +300,26 @@ jobs:
   - Error scenario coverage
   - Performance considerations
   - Environment configuration handling
+
+## ➕ Adding a New Language
+
+Extending DeepReview to a new language involves updating configuration and providing language-aware parsers:
+
+1. **Describe the language** in `src/config/languages.js`:
+   - Add file extensions and glob patterns to `LANGUAGE_FILE_CONFIGS` so the file service can detect relevant files.
+   - (Optional) Add reviewer metadata to `LANGUAGE_ROLE_CONFIGS` for prompt personalization.
+   - List dependency manifests in `LANGUAGE_DEPENDENCY_CONFIGS` to surface package information in the LLM context.
+2. **Create a language analyzer** under `src/language-analyzers/`. Each analyzer exports `getImports`, `getExports`, and `getDefinitions`, returning the most relevant relationships for the LLM context.
+3. **Register the analyzer** in `src/language-analyzers/index.js` so the context service can route files by language. Aliases (for QA flavours, etc.) can be mapped via `LANGUAGE_ALIASES`.
+4. **Add tests** that exercise the new analyzer and any language-specific behaviour.
+
+With these steps the rest of the pipeline (context generation, prompts, diff handling) automatically picks up the new language.
+
+## 🧹 Ignore Patterns
+
+- The defaults in `src/config/core.js` now exclude `.json`, `.md`, `.lock`, `.test.js`, `.spec.js`, `.mock.ts`, `.mock.js`, and `.test.ts` by suffix. Only files that end with those exact strings are skipped.
+- Supplying `ignore_patterns` in the workflow overrides the defaults entirely, so include every suffix you want ignored (e.g. `.test.ts,.mock.ts,.spec.ts`).
+- Patterns are interpreted as suffixes (`file.endsWith(pattern)`). For glob-style matching (e.g. directories or wildcards) you’ll need to expand the logic in `FileService`.
 
 ## 📊 Enhanced Review Output
 

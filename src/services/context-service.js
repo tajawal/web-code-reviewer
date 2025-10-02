@@ -5,6 +5,9 @@
 const { execSync } = require('child_process');
 const core = require('@actions/core');
 const CONTEXT_CONFIG = require('../config/context');
+const CORE_CONFIG = require('../config/core');
+const { getLanguageAnalyzer, normalizeLanguage } = require('../language-analyzers');
+const { LANGUAGE_FILE_CONFIGS, LANGUAGE_DEPENDENCY_CONFIGS } = require('../config/languages');
 
 /**
  * Optimized shell command execution with better error handling
@@ -45,8 +48,32 @@ class ShellExecutor {
 }
 
 class ContextService {
-  constructor(baseBranch) {
+  constructor(baseBranch, language = CORE_CONFIG.DEFAULT_LANGUAGE) {
     this.baseBranch = baseBranch;
+    this.language = normalizeLanguage(language || CORE_CONFIG.DEFAULT_LANGUAGE || 'js');
+  }
+
+  /**
+   * Infer language from file extension with fallback to configured language
+   */
+  detectLanguageFromPath(filePath) {
+    if (!filePath) {
+      return this.language || 'js';
+    }
+
+    const lowerPath = filePath.toLowerCase();
+    const matchedEntry = Object.entries(LANGUAGE_FILE_CONFIGS).find(([, config]) => {
+      if (!config || !config.extensions) {
+        return false;
+      }
+      return config.extensions.some(extension => lowerPath.endsWith(extension.toLowerCase()));
+    });
+
+    if (matchedEntry) {
+      return normalizeLanguage(matchedEntry[0]);
+    }
+
+    return this.language || 'js';
   }
 
   /**
@@ -92,6 +119,145 @@ class ContextService {
   }
 
   /**
+   * Build dependency sections for the provided language
+   */
+  buildDependencySectionsForLanguage(language) {
+    const normalized = normalizeLanguage(language);
+    const configs = LANGUAGE_DEPENDENCY_CONFIGS[normalized] || [];
+    const sections = [];
+
+    for (const config of configs) {
+      const section = this.renderDependencySection(config);
+      if (section) {
+        sections.push(section);
+      }
+    }
+
+    return sections;
+  }
+
+  /**
+   * Safely read dependency file content
+   */
+  readDependencyFile(filePath, maxLines) {
+    if (!filePath) {
+      return null;
+    }
+
+    try {
+      const escapedPath = this.escapeFilePath(filePath);
+      const command = maxLines
+        ? `if [ -f ${escapedPath} ]; then head -n ${maxLines} ${escapedPath}; else true; fi`
+        : `if [ -f ${escapedPath} ]; then cat ${escapedPath}; else true; fi`;
+
+      const content = ShellExecutor.execute(command);
+      if (!content || !content.trim()) {
+        return null;
+      }
+
+      return content.trimEnd();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Render dependency section based on configuration
+   */
+  renderDependencySection(config) {
+    const content = this.readDependencyFile(config.file, config.maxLines);
+    if (!content) {
+      return null;
+    }
+
+    if (config.parser === 'nodePackage') {
+      return this.renderNodePackageSection(content);
+    }
+
+    if (config.parser === 'composerPackage') {
+      return this.renderComposerPackageSection(content);
+    }
+
+    const label = config.label || config.file;
+    const linesNote = config.maxLines ? ` (first ${config.maxLines} lines)` : '';
+    return `📄 ${label}${linesNote}:\n${content}`.trimEnd();
+  }
+
+  /**
+   * Provide compact summary for package.json dependencies
+   */
+  renderNodePackageSection(content) {
+    try {
+      const packageJson = JSON.parse(content);
+      let summary = '📦 package.json\n';
+
+      if (packageJson.name) {
+        summary += `  Name: ${packageJson.name}\n`;
+      }
+
+      if (packageJson.version) {
+        summary += `  Version: ${packageJson.version}\n`;
+      }
+
+      summary += `  Project Type: ${packageJson.type || 'CommonJS'}\n`;
+
+      summary += this.formatDependencyList('Dependencies', packageJson.dependencies);
+      summary += this.formatDependencyList('Dev Dependencies', packageJson.devDependencies);
+
+      return summary.trimEnd();
+    } catch {
+      return `📦 package.json (raw):\n${content}`.trimEnd();
+    }
+  }
+
+  /**
+   * Provide compact summary for composer.json dependencies
+   */
+  renderComposerPackageSection(content) {
+    try {
+      const composerJson = JSON.parse(content);
+      let summary = '📦 composer.json\n';
+
+      if (composerJson.name) {
+        summary += `  Name: ${composerJson.name}\n`;
+      }
+
+      if (composerJson.type) {
+        summary += `  Type: ${composerJson.type}\n`;
+      }
+
+      summary += this.formatDependencyList('Require', composerJson.require);
+      summary += this.formatDependencyList('Require Dev', composerJson['require-dev']);
+
+      return summary.trimEnd();
+    } catch {
+      return `📦 composer.json (raw):\n${content}`.trimEnd();
+    }
+  }
+
+  /**
+   * Format dependency map into readable list
+   */
+  formatDependencyList(title, deps, limit = 8) {
+    if (!deps || Object.keys(deps).length === 0) {
+      return '';
+    }
+
+    const entries = Object.entries(deps);
+    let result = `  ${title} (${entries.length}):\n`;
+
+    entries.slice(0, limit).forEach(([name, version]) => {
+      result += `    - ${name}: ${version}\n`;
+    });
+
+    if (entries.length > limit) {
+      result += `    ... +${entries.length - limit} more\n`;
+    }
+
+    return result;
+  }
+
+  /**
    * Get dependency context (package.json, imports)
    */
   getDependencyContext() {
@@ -101,34 +267,33 @@ class ContextService {
 
     return this.executeWithTiming('dependencies', () => {
       try {
-        let context = '--- Dependencies Context ---\n';
+        const normalizedLanguage = this.language || CORE_CONFIG.DEFAULT_LANGUAGE || 'js';
+        let sections = this.buildDependencySectionsForLanguage(normalizedLanguage);
+        let fallbackLanguage = null;
 
-        // Get package.json with better formatting
-        try {
-          const packageJsonRaw = ShellExecutor.execute('cat package.json');
-          const packageJson = JSON.parse(packageJsonRaw);
-
-          context += '📦 Project Type:\n';
-          context += `  ${packageJson.type || 'CommonJS'}\n`;
-        } catch {
-          // Fallback to raw package.json
-          const packageJson = ShellExecutor.execute('cat package.json');
-          context += `📦 Package.json (raw):\n${packageJson}\n`;
-        }
-
-        // Get lock file info if available
-        try {
-          const lockFile = ShellExecutor.execute(
-            'ls -la package-lock.json yarn.lock 2>/dev/null | head -1'
-          );
-          if (lockFile.trim()) {
-            context += `\n🔒 Lock file: ${lockFile.trim()}\n`;
+        if (sections.length === 0 && normalizedLanguage !== 'js') {
+          sections = this.buildDependencySectionsForLanguage('js');
+          if (sections.length > 0) {
+            fallbackLanguage = 'js';
           }
-        } catch {
-          // No lock file found
         }
 
-        context += '\n--- End Dependencies ---\n';
+        let context = '--- Dependencies Context ---\n';
+        context += `🔤 Language preference: ${normalizedLanguage}\n`;
+
+        if (fallbackLanguage) {
+          context += `ℹ️ No dependency manifests detected for ${normalizedLanguage}. Falling back to ${fallbackLanguage}.\n\n`;
+        } else {
+          context += '\n';
+        }
+
+        if (sections.length === 0) {
+          context += 'No dependency manifests detected.\n';
+        } else {
+          context += `${sections.join('\n\n')}\n`;
+        }
+
+        context += '--- End Dependencies ---\n';
         return context;
       } catch (error) {
         core.warning(`⚠️  Could not get dependency context: ${error.message}`);
@@ -192,8 +357,11 @@ class ContextService {
               continue;
             }
 
+            const fileLanguage = this.detectLanguageFromPath(file);
+            const analyzer = getLanguageAnalyzer(fileLanguage);
+
             // Focus only on direct imports and exports (most relevant for review)
-            const incomingRelationships = this.analyzeIncomingRelationships(fileContent);
+            const incomingRelationships = analyzer.getImports(fileContent) || [];
             if (incomingRelationships.length > 0) {
               context += '  📥 Imports:\n';
               incomingRelationships.slice(0, 5).forEach(rel => {
@@ -202,7 +370,7 @@ class ContextService {
               });
             }
 
-            const outgoingRelationships = this.analyzeOutgoingRelationships(fileContent);
+            const outgoingRelationships = analyzer.getExports(fileContent) || [];
             if (outgoingRelationships.length > 0) {
               context += '  📤 Exports:\n';
               outgoingRelationships.slice(0, 5).forEach(rel => {
@@ -255,8 +423,11 @@ class ContextService {
               continue;
             }
 
+            const fileLanguage = this.detectLanguageFromPath(file);
+            const analyzer = getLanguageAnalyzer(fileLanguage);
+
             // Extract only key function/class definitions (most relevant for review)
-            const definitions = this.extractCodeDefinitions(fileContent);
+            const definitions = analyzer.getDefinitions(fileContent) || [];
             if (definitions.length > 0) {
               context += '  📝 Key Definitions:\n';
               definitions.slice(0, 5).forEach(def => {
@@ -583,269 +754,6 @@ class ContextService {
       'project structure': '📁'
     };
     return emojiMap[sectionType.toLowerCase()] || '📋';
-  }
-
-  /**
-   * Extract code definitions (functions, classes, interfaces)
-   */
-  extractCodeDefinitions(fileContent) {
-    const definitions = [];
-    const lines = fileContent.split('\n');
-    let currentFunction = null;
-    let braceCount = 0;
-    let functionLines = [];
-    let inFunction = false;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-
-      // Function definitions
-      if (trimmed.match(/^(export\s+)?(async\s+)?function\s+\w+/)) {
-        if (currentFunction) {
-          // Save previous function
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-        }
-        currentFunction = trimmed;
-        functionLines = [trimmed];
-        inFunction = true;
-        braceCount = 0;
-      }
-      // Class definitions
-      else if (trimmed.match(/^(export\s+)?class\s+\w+/)) {
-        if (currentFunction) {
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-          currentFunction = null;
-          inFunction = false;
-        }
-        const classSample = this.extractClassSample(lines, i);
-        definitions.push(`Class: ${trimmed}\n${classSample}`);
-      }
-      // Interface/Type definitions
-      else if (trimmed.match(/^(export\s+)?(interface|type)\s+\w+/)) {
-        if (currentFunction) {
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-          currentFunction = null;
-          inFunction = false;
-        }
-        const typeSample = this.extractTypeSample(lines, i);
-        definitions.push(`Type: ${trimmed}\n${typeSample}`);
-      }
-      // Const/Let/Var with function assignment
-      else if (trimmed.match(/^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s+)?\(/)) {
-        if (currentFunction) {
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-          currentFunction = null;
-          inFunction = false;
-        }
-        const arrowFunctionSample = this.extractArrowFunctionSample(lines, i);
-        definitions.push(`Function Expression: ${trimmed}\n${arrowFunctionSample}`);
-      }
-      // Track function body
-      else if (inFunction && currentFunction) {
-        functionLines.push(line);
-
-        // Count braces to detect function end
-        for (const char of line) {
-          if (char === '{') braceCount++;
-          if (char === '}') braceCount--;
-        }
-
-        // Limit function body size to prevent token explosion (check before function end)
-        if (functionLines.length > 20) {
-          functionLines.push('  // ... (truncated for context)');
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-          currentFunction = null;
-          inFunction = false;
-          functionLines = [];
-        }
-        // Function ended (check after truncation)
-        else if (braceCount === 0 && functionLines.length > 1) {
-          definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-          currentFunction = null;
-          inFunction = false;
-          functionLines = [];
-        }
-      }
-    }
-
-    // Handle last function if exists
-    if (currentFunction && functionLines.length > 0) {
-      definitions.push(this.formatCodeDefinition('Function', currentFunction, functionLines));
-    }
-
-    return definitions.slice(0, 8); // Limit to 8 most important to control token usage
-  }
-
-  /**
-   * Format code definition with signature and sample body
-   */
-  formatCodeDefinition(type, signature, lines) {
-    const body = lines.slice(1, 6).join('\n'); // First 5 lines of body
-    const truncated = lines.length > 6 ? '\n  // ... (truncated)' : '';
-    return `${type}: ${signature}\n${body}${truncated}`;
-  }
-
-  /**
-   * Extract class sample (constructor and first few methods)
-   */
-  extractClassSample(lines, startIndex) {
-    const sample = [];
-    let braceCount = 0;
-    let methodCount = 0;
-
-    for (let i = startIndex; i < lines.length && methodCount < 3; i++) {
-      const line = lines[i];
-      sample.push(line);
-
-      for (const char of line) {
-        if (char === '{') braceCount++;
-        if (char === '}') braceCount--;
-      }
-
-      // Count methods
-      if (line.trim().match(/^\w+\s*\([^)]*\)\s*{/) && braceCount > 1) {
-        methodCount++;
-      }
-
-      // Class ended
-      if (braceCount === 0 && i > startIndex) break;
-    }
-
-    return sample.join('\n');
-  }
-
-  /**
-   * Extract type/interface sample
-   */
-  extractTypeSample(lines, startIndex) {
-    const sample = [];
-    let braceCount = 0;
-
-    for (let i = startIndex; i < lines.length; i++) {
-      const line = lines[i];
-      sample.push(line);
-
-      for (const char of line) {
-        if (char === '{') braceCount++;
-        if (char === '}') braceCount--;
-      }
-
-      // Type ended
-      if (braceCount === 0 && i > startIndex) break;
-
-      // Limit size
-      if (sample.length > 10) {
-        sample.push('  // ... (truncated)');
-        break;
-      }
-    }
-
-    return sample.join('\n');
-  }
-
-  /**
-   * Extract arrow function sample
-   */
-  extractArrowFunctionSample(lines, startIndex) {
-    const sample = [];
-    let braceCount = 0;
-    let parenCount = 0;
-    let inParams = false;
-
-    for (let i = startIndex; i < lines.length; i++) {
-      const line = lines[i];
-      sample.push(line);
-
-      for (const char of line) {
-        if (char === '(') {
-          parenCount++;
-          inParams = true;
-        }
-        if (char === ')') {
-          parenCount--;
-          if (parenCount === 0) inParams = false;
-        }
-        if (!inParams) {
-          if (char === '{') braceCount++;
-          if (char === '}') braceCount--;
-        }
-      }
-
-      // Function ended (single line or multi-line)
-      if (braceCount === 0 && !inParams && i > startIndex) break;
-
-      // Limit size
-      if (sample.length > 8) {
-        sample.push('  // ... (truncated)');
-        break;
-      }
-    }
-
-    return sample.join('\n');
-  }
-
-  /**
-   * Analyze incoming relationships (imports/requires)
-   */
-  analyzeIncomingRelationships(fileContent) {
-    const relationships = [];
-    const lines = fileContent.split('\n');
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      // ES6 imports
-      if (trimmed.match(/^import\s+.*\s+from\s+['"]([^'"]+)['"]/)) {
-        const match = trimmed.match(/^import\s+.*\s+from\s+['"]([^'"]+)['"]/);
-        if (match) {
-          relationships.push(`Import: ${match[1]} (${trimmed})`);
-        }
-      }
-      // CommonJS requires
-      else if (trimmed.match(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/)) {
-        const match = trimmed.match(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/);
-        if (match) {
-          relationships.push(`Require: ${match[1]} (${trimmed})`);
-        }
-      }
-      // Dynamic imports
-      else if (trimmed.match(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/)) {
-        const match = trimmed.match(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/);
-        if (match) {
-          relationships.push(`Dynamic Import: ${match[1]} (${trimmed})`);
-        }
-      }
-    }
-
-    return relationships.slice(0, 8); // Limit to 8 most important
-  }
-
-  /**
-   * Analyze outgoing relationships (exports)
-   */
-  analyzeOutgoingRelationships(fileContent) {
-    const relationships = [];
-    const lines = fileContent.split('\n');
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      // ES6 exports
-      if (trimmed.match(/^export\s+(default\s+)?(function|class|const|let|var|interface|type)/)) {
-        relationships.push(`Export: ${trimmed}`);
-      }
-      // CommonJS exports
-      else if (trimmed.match(/module\.exports\s*=/)) {
-        relationships.push(`Module Export: ${trimmed}`);
-      }
-      // Named exports
-      else if (trimmed.match(/^export\s*{/)) {
-        relationships.push(`Named Export: ${trimmed}`);
-      }
-    }
-
-    return relationships.slice(0, 6); // Limit to 6 most important
   }
 }
 
