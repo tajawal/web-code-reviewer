@@ -245,12 +245,6 @@ class ReviewService {
       );
       extractedData.issues = [...nonSuggestionIssues, ...suggestions];
 
-      if (extractedData.metrics && typeof extractedData.metrics === 'object') {
-        if (typeof extractedData.metrics.suggestion_count === 'number') {
-          extractedData.metrics.suggestion_count = suggestions.length;
-        }
-      }
-
       issueDetails = '## 🔍 **Issues Found**\n\n';
 
       if (criticalIssues.length > 0) {
@@ -309,8 +303,8 @@ class ReviewService {
       // Add combined metrics
 
       reviewMetrics += '### 📊 **Review Metrics**\n';
-      reviewMetrics += `- **Critical Issues**: ${extractedData.totalCriticalCount}\n`;
-      reviewMetrics += `- **Suggestions**: ${extractedData.totalSuggestionCount}\n`;
+      reviewMetrics += `- **Critical Issues**: ${criticalIssues.length}\n`;
+      reviewMetrics += `- **Suggestions**: ${suggestions.length}\n`;
       reviewMetrics += `- **Total Issues**: ${extractedData.issues.length}\n`;
       reviewMetrics += `- **Chunks Processed**: ${extractedData.chunksProcessed}\n\n`;
     }
