@@ -34440,24 +34440,48 @@ class ReviewService {
         'correct as written',
         'no changes required'
       ];
-      const suggestions = extractedData.issues
-        .filter(i => i.severity_proposed === 'suggestion')
-        .filter(issue => {
-          const combinedText = `${issue.fix_summary || ''} ${
-            issue.fix_code_patch || ''
-          }`.toLowerCase();
-          const isInformational = suggestionSkipPhrases.some(phrase =>
-            combinedText.includes(phrase)
+      const originalSuggestions = extractedData.issues.filter(
+        i => i.severity_proposed === 'suggestion'
+      );
+      const actionableSuggestions = [];
+      const informationalSuggestions = [];
+
+      originalSuggestions.forEach(issue => {
+        const combinedText = `${issue.fix_summary || ''} ${
+          issue.fix_code_patch || ''
+        }`.toLowerCase();
+        const isInformational = suggestionSkipPhrases.some(phrase => combinedText.includes(phrase));
+        if (isInformational) {
+          const issueId = issue.originalId || issue.id || 'unknown';
+          informationalSuggestions.push(issue);
+          core.info(
+            `ℹ️  Skipping informational suggestion ${issueId} - message indicates change is already correct.`
           );
-          if (isInformational) {
-            const issueId = issue.originalId || issue.id || 'unknown';
-            core.info(
-              `ℹ️  Skipping informational suggestion ${issueId} - message indicates change is already correct.`
-            );
-            return false;
-          }
-          return true;
-        });
+        } else {
+          actionableSuggestions.push(issue);
+        }
+      });
+
+      if (informationalSuggestions.length > 0) {
+        core.info(
+          `ℹ️  Informational suggestions filtered: ${informationalSuggestions
+            .map(issue => issue.originalId || issue.id || 'unknown')
+            .join(', ')}`
+        );
+      }
+
+      const suggestions = actionableSuggestions;
+
+      const nonSuggestionIssues = extractedData.issues.filter(
+        issue => issue.severity_proposed !== 'suggestion'
+      );
+      extractedData.issues = [...nonSuggestionIssues, ...suggestions];
+
+      if (extractedData.metrics && typeof extractedData.metrics === 'object') {
+        if (typeof extractedData.metrics.suggestion_count === 'number') {
+          extractedData.metrics.suggestion_count = suggestions.length;
+        }
+      }
 
       issueDetails = '## 🔍 **Issues Found**\n\n';
 
