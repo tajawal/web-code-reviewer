@@ -199,7 +199,33 @@ class ReviewService {
     let reviewMetrics = '';
     if (extractedData.issues.length > 0) {
       const criticalIssues = extractedData.issues.filter(i => i.severity_proposed === 'critical');
-      const suggestions = extractedData.issues.filter(i => i.severity_proposed === 'suggestion');
+      const suggestionSkipPhrases = [
+        'already correct',
+        'no fix needed',
+        'already resolved',
+        'looks good',
+        'change is correct',
+        'correct as written',
+        'no changes required'
+      ];
+      const suggestions = extractedData.issues
+        .filter(i => i.severity_proposed === 'suggestion')
+        .filter(issue => {
+          const combinedText = `${issue.fix_summary || ''} ${
+            issue.fix_code_patch || ''
+          }`.toLowerCase();
+          const isInformational = suggestionSkipPhrases.some(phrase =>
+            combinedText.includes(phrase)
+          );
+          if (isInformational) {
+            const issueId = issue.originalId || issue.id || 'unknown';
+            core.info(
+              `ℹ️  Skipping informational suggestion ${issueId} - message indicates change is already correct.`
+            );
+            return false;
+          }
+          return true;
+        });
 
       issueDetails = '## 🔍 **Issues Found**\n\n';
 
