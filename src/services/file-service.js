@@ -38,8 +38,6 @@ class FileService {
 
           // Check if file should be ignored using ignore patterns from input or default
           const shouldIgnore = this.ignorePatterns.some(pattern => file.endsWith(pattern));
-          core.info(`ignorePatterns: ${this.ignorePatterns}`);
-          core.info(`file: ${file}, shouldIgnore: ${shouldIgnore}`);
 
           // Check if file matches the specified language
           const matchesLanguage = this.matchesLanguage(file);

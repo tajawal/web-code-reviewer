@@ -32671,8 +32671,6 @@ class FileService {
 
           // Check if file should be ignored using ignore patterns from input or default
           const shouldIgnore = this.ignorePatterns.some(pattern => file.endsWith(pattern));
-          core.info(`ignorePatterns: ${this.ignorePatterns}`);
-          core.info(`file: ${file}, shouldIgnore: ${shouldIgnore}`);
 
           // Check if file matches the specified language
           const matchesLanguage = this.matchesLanguage(file);
@@ -33306,10 +33304,6 @@ class LLMService {
     // Use shared context if provided, otherwise generate new one
     const context =
       sharedContext || (await this.contextService.getComprehensiveContext(changedFiles));
-
-    core.info(`============Context============`);
-    core.info(context);
-    core.info(`============Context============`);
 
     if (totalChunks === 1) {
       // For single chunk, include full context
