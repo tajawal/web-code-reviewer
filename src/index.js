@@ -120,10 +120,6 @@ class GitHubActionsReviewer {
     // Get language-specific review prompt
     const reviewPrompt = getReviewPrompt(this.inputs.language);
 
-    core.info(`============Prompt============`);
-    core.info(reviewPrompt);
-    core.info(`============Prompt============`);
-
     core.info(`📝 Using ${this.inputs.language} review prompt`);
 
     const fullDiff = this.fileService.getFullDiff();

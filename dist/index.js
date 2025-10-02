@@ -33294,6 +33294,10 @@ class LLMService {
     const context =
       sharedContext || (await this.contextService.getComprehensiveContext(changedFiles));
 
+    core.info(`============Context============`);
+    core.info(context);
+    core.info(`============Context============`);
+
     if (totalChunks === 1) {
       // For single chunk, include full context
       return `${prompt}\n\n${context}\n\n============================================================\n📋 ACTUAL CODE CHANGES TO REVIEW (REVIEW THESE ONLY):\n============================================================\n\n**The following diffs/files are what you should review:**`;
@@ -36838,10 +36842,6 @@ class GitHubActionsReviewer {
 
     // Get language-specific review prompt
     const reviewPrompt = getReviewPrompt(this.inputs.language);
-
-    core.info(`============Prompt============`);
-    core.info(reviewPrompt);
-    core.info(`============Prompt============`);
 
     core.info(`📝 Using ${this.inputs.language} review prompt`);
 
