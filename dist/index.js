@@ -34431,7 +34431,33 @@ class ReviewService {
     let reviewMetrics = '';
     if (extractedData.issues.length > 0) {
       const criticalIssues = extractedData.issues.filter(i => i.severity_proposed === 'critical');
-      const suggestions = extractedData.issues.filter(i => i.severity_proposed === 'suggestion');
+      const suggestionSkipPhrases = [
+        'already correct',
+        'no fix needed',
+        'already resolved',
+        'looks good',
+        'change is correct',
+        'correct as written',
+        'no changes required'
+      ];
+      const suggestions = extractedData.issues
+        .filter(i => i.severity_proposed === 'suggestion')
+        .filter(issue => {
+          const combinedText = `${issue.fix_summary || ''} ${
+            issue.fix_code_patch || ''
+          }`.toLowerCase();
+          const isInformational = suggestionSkipPhrases.some(phrase =>
+            combinedText.includes(phrase)
+          );
+          if (isInformational) {
+            const issueId = issue.originalId || issue.id || 'unknown';
+            core.info(
+              `ℹ️  Skipping informational suggestion ${issueId} - message indicates change is already correct.`
+            );
+            return false;
+          }
+          return true;
+        });
 
       issueDetails = '## 🔍 **Issues Found**\n\n';
 
@@ -36602,7 +36628,7 @@ module.exports = parseParams
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.30","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","node-fetch":"^3.3.2"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
+module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.31","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","node-fetch":"^3.3.2"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
 
 /***/ })
 
@@ -36744,7 +36770,7 @@ const LoggingService = __nccwpck_require__(8689);
 
 // Version information - updated during build process
 const VERSION_INFO = {
-  version: '1.14.30',
+  version: '1.14.31',
   name: 'web-code-reviewer',
   description: 'Automated code review using LLM (Claude/OpenAI) for GitHub PRs'
 };
