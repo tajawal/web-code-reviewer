@@ -117,6 +117,19 @@ src/components/Button.jsx`;
       expect(result[3]).toBe('src/components/Button.jsx');
     });
 
+    it('should ignore files matching configured suffix patterns', () => {
+      const serviceWithSuffices = new FileService('main', 'js', ['src/'], ['.test.ts', '.mock.ts']);
+      const mockGitOutput = `src/index.ts
+src/stores/calculate-reward.store/calculate-reward.test.ts
+src/__mocks__/calculate-rewards.mock.ts`;
+
+      execSync.mockReturnValue(mockGitOutput);
+
+      const result = serviceWithSuffices.getChangedFiles();
+
+      expect(result).toEqual(['src/index.ts']);
+    });
+
     it('should handle empty git output', () => {
       execSync.mockReturnValue('');
 

@@ -30005,7 +30005,9 @@ const CORE_CONFIG = {
     '.spec.js',
     '.mock.ts',
     '.mock.js',
-    '.test.ts'
+    '.test.ts',
+    '.test-suite.js',
+    '.test-suite.ts'
   ]
 };
 
