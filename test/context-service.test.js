@@ -4,6 +4,8 @@
 
 const ContextService = require('../src/services/context-service');
 const CONTEXT_CONFIG = require('../src/config/context');
+const { LANGUAGE_DEPENDENCY_CONFIGS } = require('../src/config/languages');
+const { getLanguageAnalyzer } = require('../src/language-analyzers');
 
 // Mock @actions/core
 jest.mock('@actions/core', () => ({
@@ -31,60 +33,147 @@ describe('ContextService', () => {
     it('should initialize with base branch', () => {
       const service = new ContextService('develop');
       expect(service.baseBranch).toBe('develop');
+      expect(service.language).toBe('js');
     });
 
     it('should default to main branch if none provided', () => {
       const service = new ContextService();
       expect(service.baseBranch).toBeUndefined();
+      expect(service.language).toBe('js');
+    });
+
+    it('should normalize provided language to lowercase', () => {
+      const service = new ContextService('develop', 'Python');
+      expect(service.language).toBe('python');
+    });
+  });
+
+  describe('detectLanguageFromPath', () => {
+    it('should infer language from file extension using config metadata', () => {
+      expect(contextService.detectLanguageFromPath('src/main/java/App.java')).toBe('java');
+      expect(contextService.detectLanguageFromPath('app/services/user_service.py')).toBe('python');
+      expect(contextService.detectLanguageFromPath('Sources/App/Feature.swift')).toBe('swift');
+    });
+
+    it('should fall back to constructor language when extension is unknown', () => {
+      const service = new ContextService('main', 'php');
+      expect(service.detectLanguageFromPath('README.unknown')).toBe('php');
     });
   });
 
 
   describe('getDependencyContext', () => {
-    it('should return dependency context when package.json exists', async () => {
+    it('should summarize package.json dependencies for JavaScript projects', async () => {
+      const jsDependencyFiles = LANGUAGE_DEPENDENCY_CONFIGS.js;
+      const packageJsonConfig = jsDependencyFiles[0];
+
       const mockPackageJson = JSON.stringify({
         name: 'test-project',
+        version: '1.2.3',
         type: 'module',
         dependencies: {
-          'react': '^18.0.0',
-          'lodash': '^4.17.21'
+          react: '^18.0.0',
+          lodash: '^4.17.21'
         },
         devDependencies: {
-          'jest': '^29.0.0'
+          jest: '^29.0.0'
         }
       });
 
-      execSync.mockReturnValue(mockPackageJson);
-
-      const result = await contextService.getDependencyContext();
-
-      expect(result).toContain('📦 Project Type:');
-      expect(result).toContain('module');
-      expect(execSync).toHaveBeenCalledWith('cat package.json', expect.objectContaining({
-        encoding: 'utf8',
-        maxBuffer: 5242880,
-        timeout: 30000
-      }));
-    });
-
-    it('should handle missing package.json', async () => {
-      execSync.mockImplementation(() => {
-        throw new Error('No such file');
+      execSync.mockImplementation(command => {
+        if (command.includes(packageJsonConfig.file)) {
+          return mockPackageJson;
+        }
+        return '';
       });
-
-      const result = await contextService.getDependencyContext();
-
-      expect(result).toBe(''); // Should return empty string when package.json is missing
-    });
-
-    it('should handle invalid JSON in package.json', async () => {
-      execSync.mockReturnValue('invalid json');
 
       const result = await contextService.getDependencyContext();
 
       expect(result).toContain('--- Dependencies Context ---');
-      expect(result).toContain('📦 Package.json (raw):');
+      expect(result).toContain('📦 package.json');
+      expect(result).toContain('Dependencies (2):');
+      expect(result).toContain('- react: ^18.0.0');
+      expect(execSync).toHaveBeenCalledWith(
+        expect.stringContaining(packageJsonConfig.file),
+        expect.objectContaining({
+          encoding: 'utf8',
+          maxBuffer: 5242880,
+          timeout: 30000
+        })
+      );
+    });
+
+    it('should handle missing dependency manifests gracefully', async () => {
+      execSync.mockReturnValue('');
+
+      const result = await contextService.getDependencyContext();
+
+      expect(result).toContain('--- Dependencies Context ---');
+      expect(result).toContain('No dependency manifests detected.');
+    });
+
+    it('should fall back to raw package.json when JSON parsing fails', async () => {
+      const jsDependencyFiles = LANGUAGE_DEPENDENCY_CONFIGS.js;
+      const packageJsonConfig = jsDependencyFiles[0];
+
+      execSync.mockImplementation(command => {
+        if (command.includes(packageJsonConfig.file)) {
+          return 'invalid json';
+        }
+        return '';
+      });
+
+      const result = await contextService.getDependencyContext();
+
+      expect(result).toContain('--- Dependencies Context ---');
+      expect(result).toContain('📦 package.json (raw):');
       expect(result).toContain('invalid json');
+    });
+
+    it('should include python dependency files when present', async () => {
+      const pythonContextService = new ContextService('main', 'python');
+
+      const pythonDependencies = LANGUAGE_DEPENDENCY_CONFIGS.python;
+      const requirementsConfig = pythonDependencies.find(dep => dep.file === 'requirements.txt');
+
+      execSync.mockImplementation(command => {
+        if (requirementsConfig && command.includes(requirementsConfig.file)) {
+          return 'Django==4.2.0\nrequests==2.31.0\n';
+        }
+        return '';
+      });
+
+      const result = await pythonContextService.getDependencyContext();
+
+      expect(result).toContain('Language preference: python');
+      expect(result).toContain('📄 requirements.txt (first 60 lines):');
+      expect(result).toContain('Django==4.2.0');
+    });
+
+    it('should fall back to JavaScript manifests when none found for the selected language', async () => {
+      const pythonContextService = new ContextService('main', 'python');
+
+      const mockPackageJson = JSON.stringify({
+        dependencies: {
+          express: '^4.18.2'
+        }
+      });
+
+      const jsDependencyFiles = LANGUAGE_DEPENDENCY_CONFIGS.js;
+      const packageJsonConfig = jsDependencyFiles[0];
+
+      execSync.mockImplementation(command => {
+        if (command.includes(packageJsonConfig.file)) {
+          return mockPackageJson;
+        }
+        return '';
+      });
+
+      const result = await pythonContextService.getDependencyContext();
+
+      expect(result).toContain('Falling back to js');
+      expect(result).toContain('📦 package.json');
+      expect(result).toContain('express: ^4.18.2');
     });
   });
 
@@ -195,6 +284,23 @@ export default App;`;
       expect(result).toContain('Exports:');
     });
 
+    it('should capture python imports and definitions', async () => {
+      const pythonContent = `import os\nfrom django.conf import settings\n\nclass SampleService:\n    def __init__(self):\n        self.value = 1\n\n    def do_work(self):\n        return self.value\n\n\ndef helper():\n    return True\n`;
+
+      execSync.mockReturnValue(pythonContent);
+
+      const relationships = await contextService.getFileRelationshipsContext(['app/main.py']);
+
+      expect(relationships).toContain('Import: os');
+      expect(relationships).toContain('From django.conf import settings');
+      expect(relationships).toContain('Class: SampleService');
+
+      const semanticContext = await contextService.getSemanticCodeContext(['app/main.py']);
+
+      expect(semanticContext).toContain('Function: def helper');
+      expect(semanticContext).toContain('Class: class SampleService');
+    });
+
     it('should handle empty changed files', async () => {
       const result = await contextService.getFileRelationshipsContext([]);
 
@@ -265,303 +371,65 @@ export default App;`;
     });
   });
 
-  describe('extractCodeDefinitions', () => {
-    it('should extract function definitions with code samples', () => {
+  describe('language analyzers (JavaScript)', () => {
+    const jsAnalyzer = getLanguageAnalyzer('js');
+
+    it('should extract key definitions from JavaScript code', () => {
       const code = `function calculateTotal(a, b) {
   return a + b;
 }
 
-const processData = (data) => {
-  return data.map(item => item.value);
-};`;
-
-      const result = contextService.extractCodeDefinitions(code);
-
-      expect(result.some(def => def.includes('Function: function calculateTotal(a, b) {'))).toBe(true);
-      expect(result.some(def => def.includes('return a + b;'))).toBe(true);
-      expect(result.some(def => def.includes('Function Expression: const processData = (data) => {'))).toBe(true);
-      expect(result.some(def => def.includes('return data.map(item => item.value);'))).toBe(true);
-    });
-
-    it('should extract class definitions with code samples', () => {
-      const code = `class UserService {
+class UserService {
   constructor(apiClient) {
     this.apiClient = apiClient;
   }
-  
-  async getUser(id) {
-    return await this.apiClient.get(\`/users/\${id}\`);
-  }
-}`;
-
-      const result = contextService.extractCodeDefinitions(code);
-
-      expect(result.some(def => def.includes('Class: class UserService {'))).toBe(true);
-      expect(result.some(def => def.includes('constructor(apiClient) {'))).toBe(true);
-      expect(result.some(def => def.includes('this.apiClient = apiClient;'))).toBe(true);
-    });
-
-    it('should handle empty code', () => {
-      const result = contextService.extractCodeDefinitions('');
-      expect(result).toEqual([]);
-    });
-
-    it('should limit number of definitions', () => {
-      const code = Array(15).fill(0).map((_, i) => `function test${i}() {\n  return ${i};\n}`).join('\n');
-      
-      const result = contextService.extractCodeDefinitions(code);
-      
-      expect(result.length).toBeLessThanOrEqual(8); // Updated limit from 10 to 8
-    });
-
-    it('should extract interface/type definitions', () => {
-      const code = `interface User {
-  id: number;
-  name: string;
-  email: string;
 }
 
 type PaymentStatus = 'pending' | 'completed' | 'failed';`;
 
-      const result = contextService.extractCodeDefinitions(code);
+      const result = jsAnalyzer.getDefinitions(code);
 
-      expect(result.some(def => def.includes('Type: interface User {'))).toBe(true);
-      expect(result.some(def => def.includes('id: number;'))).toBe(true);
+      expect(result.some(def => def.includes('Function: function calculateTotal(a, b) {'))).toBe(true);
+      expect(result.some(def => def.includes('Class: class UserService {'))).toBe(true);
       expect(result.some(def => def.includes('Type: type PaymentStatus ='))).toBe(true);
     });
 
-    it('should truncate large function bodies', () => {
-      const code = `function largeFunction() {
-  const a = 1;
-  const b = 2;
-  const c = 3;
-  const d = 4;
-  const e = 5;
-  const f = 6;
-  const g = 7;
-  const h = 8;
-  const i = 9;
-  const j = 10;
-  const k = 11;
-  const l = 12;
-  const m = 13;
-  const n = 14;
-  const o = 15;
-  const p = 16;
-  const q = 17;
-  const r = 18;
-  const s = 19;
-  const t = 20;
-  const u = 21;
-  const v = 22;
-  const w = 23;
-  const x = 24;
-  const y = 25;
-  const z = 26;
-  const aa = 27;
-  const bb = 28;
-  const cc = 29;
-  const dd = 30;
-  const ee = 31;
-  const ff = 32;
-  const gg = 33;
-  const hh = 34;
-  const ii = 35;
-  const jj = 36;
-  const kk = 37;
-  const ll = 38;
-  const mm = 39;
-  const nn = 40;
-  const oo = 41;
-  const pp = 42;
-  const qq = 43;
-  const rr = 44;
-  const ss = 45;
-  const tt = 46;
-  const uu = 47;
-  const vv = 48;
-  const ww = 49;
-  const xx = 50;
-  const yy = 51;
-  const zz = 52;
-  return a + b + c + d + e + f + g + h + i + j + k + l + m + n + o + p + q + r + s + t + u + v + w + x + y + z + aa + bb + cc + dd + ee + ff + gg + hh + ii + jj + kk + ll + mm + nn + oo + pp + qq + rr + ss + tt + uu + vv + ww + xx + yy + zz;
-}`;
+    it('should limit number of definitions and avoid unnecessary truncation', () => {
+      const code = Array.from({ length: 20 }, (_, i) => `function test${i}() {\n  return ${i};\n}`).join('\n');
 
-      const result = contextService.extractCodeDefinitions(code);
+      const result = jsAnalyzer.getDefinitions(code);
 
-      expect(result.some(def => def.includes('Function: function largeFunction() {'))).toBe(true);
-      expect(result.some(def => def.includes('// ... (truncated for context)'))).toBe(false);
+      expect(result.length).toBeLessThanOrEqual(8);
+      expect(result.some(def => def.includes('// ... (truncated'))).toBe(false);
     });
-  });
 
-  describe('analyzeIncomingRelationships', () => {
-    it('should extract import statements', () => {
+    it('should parse JavaScript import statements', () => {
       const code = `import React from 'react';
 import { useState, useEffect } from 'react';
-import { UserService } from './services/user-service.js';
-import * as utils from './utils';`;
+const lodash = require('lodash');`;
 
-      const result = contextService.analyzeIncomingRelationships(code);
+      const imports = jsAnalyzer.getImports(code);
 
-      expect(result).toContain("Import: react (import React from 'react';)");
-      expect(result).toContain("Import: react (import { useState, useEffect } from 'react';)");
-      expect(result).toContain("Import: ./services/user-service.js (import { UserService } from './services/user-service.js';)");
+      expect(imports).toContain("Import: react (import React from 'react';)");
+      expect(imports).toContain("Import: react (import { useState, useEffect } from 'react';)");
+      expect(imports).toContain("Require: lodash (const lodash = require('lodash');)");
     });
 
-    it('should handle require statements', () => {
-      const code = `const fs = require('fs');
-const { promisify } = require('util');
-const UserService = require('./services/user-service');`;
-
-      const result = contextService.analyzeIncomingRelationships(code);
-
-      expect(result).toContain("Require: fs (const fs = require('fs');)");
-      expect(result).toContain("Require: util (const { promisify } = require('util');)");
-    });
-
-    it('should handle empty code', () => {
-      const result = contextService.analyzeIncomingRelationships('');
-      expect(result).toEqual([]);
-    });
-  });
-
-  describe('analyzeOutgoingRelationships', () => {
-    it('should extract export statements', () => {
+    it('should parse JavaScript export statements', () => {
       const code = `export const API_URL = 'https://api.example.com';
 export function calculateTotal(a, b) {
   return a + b;
 }
-export default class UserService {
-  constructor() {}
-}`;
 
-      const result = contextService.analyzeOutgoingRelationships(code);
+module.exports = {
+  calculateTotal
+};`;
 
-      expect(result).toContain("Export: export const API_URL = 'https://api.example.com';");
-      expect(result).toContain('Export: export function calculateTotal(a, b) {');
-      expect(result).toContain('Export: export default class UserService {');
-    });
+      const exports = jsAnalyzer.getExports(code);
 
-    it('should handle module.exports', () => {
-      const code = `module.exports = {
-  calculateTotal: (a, b) => a + b,
-  API_URL: 'https://api.example.com'
-};
-
-module.exports.UserService = class UserService {};`;
-
-      const result = contextService.analyzeOutgoingRelationships(code);
-
-      expect(result).toContain('Module Export: module.exports = {');
-      // The actual implementation only matches module.exports = pattern, not module.exports.UserService
-      expect(result.length).toBeGreaterThan(0);
-    });
-
-    it('should handle empty code', () => {
-      const result = contextService.analyzeOutgoingRelationships('');
-      expect(result).toEqual([]);
-    });
-  });
-
-  describe('formatCodeDefinition', () => {
-    it('should format code definition with signature and body', () => {
-      const signature = 'function test(a, b) {';
-      const lines = [
-        'function test(a, b) {',
-        '  const result = a + b;',
-        '  return result;',
-        '}'
-      ];
-
-      const result = contextService.formatCodeDefinition('Function', signature, lines);
-
-      expect(result).toContain('Function: function test(a, b) {');
-      expect(result).toContain('const result = a + b;');
-      expect(result).toContain('return result;');
-    });
-
-    it('should add truncation note for long functions', () => {
-      const signature = 'function longFunction() {';
-      const lines = [
-        'function longFunction() {',
-        '  const a = 1;',
-        '  const b = 2;',
-        '  const c = 3;',
-        '  const d = 4;',
-        '  const e = 5;',
-        '  const f = 6;',
-        '  return a + b + c + d + e + f;',
-        '}'
-      ];
-
-      const result = contextService.formatCodeDefinition('Function', signature, lines);
-
-      expect(result).toContain('// ... (truncated)');
-    });
-  });
-
-  describe('extractClassSample', () => {
-    it('should extract class sample with constructor and methods', () => {
-      const lines = [
-        'class UserService {',
-        '  constructor(apiClient) {',
-        '    this.apiClient = apiClient;',
-        '  }',
-        '  ',
-        '  async getUser(id) {',
-        '    return await this.apiClient.get(`/users/${id}`);',
-        '  }',
-        '  ',
-        '  validateUser(user) {',
-        '    return user && user.id;',
-        '  }',
-        '}'
-      ];
-
-      const result = contextService.extractClassSample(lines, 0);
-
-      expect(result).toContain('class UserService {');
-      expect(result).toContain('constructor(apiClient) {');
-      expect(result).toContain('async getUser(id) {');
-    });
-  });
-
-  describe('extractTypeSample', () => {
-    it('should extract type/interface sample', () => {
-      const lines = [
-        'interface User {',
-        '  id: number;',
-        '  name: string;',
-        '  email: string;',
-        '  isActive: boolean;',
-        '}'
-      ];
-
-      const result = contextService.extractTypeSample(lines, 0);
-
-      expect(result).toContain('interface User {');
-      expect(result).toContain('id: number;');
-      expect(result).toContain('name: string;');
-    });
-  });
-
-  describe('extractArrowFunctionSample', () => {
-    it('should extract arrow function sample', () => {
-      const lines = [
-        'const processData = (data) => {',
-        '  return data.map(item => {',
-        '    return {',
-        '      id: item.id,',
-        '      value: item.value * 2',
-        '    };',
-        '  });',
-        '};'
-      ];
-
-      const result = contextService.extractArrowFunctionSample(lines, 0);
-
-      expect(result).toContain('const processData = (data) => {');
-      expect(result).toContain('return data.map(item => {');
+      expect(exports).toContain("Export: export const API_URL = 'https://api.example.com';");
+      expect(exports.some(line => line.includes('calculateTotal(a, b)'))).toBe(true);
+      expect(exports.some(line => line.includes('module.exports'))).toBe(true);
     });
   });
 

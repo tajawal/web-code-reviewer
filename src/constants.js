@@ -9,7 +9,7 @@ const PROCESSING_CONFIG = require('./config/processing');
 const LOGGING_CONFIG = require('./config/logging');
 const LABEL_CONFIG = require('./config/labels');
 const { APPROVAL_PHRASES, BLOCKING_PHRASES, CRITICAL_ISSUES } = require('./config/merge-decision');
-const { LANGUAGE_FILE_CONFIGS, LANGUAGE_ROLE_CONFIGS } = require('./config/languages');
+const { LANGUAGE_FILE_CONFIGS, LANGUAGE_ROLE_CONFIGS, LANGUAGE_DEPENDENCY_CONFIGS } = require('./config/languages');
 const LLM_PROVIDERS = require('./config/llm-providers');
 
 // Import prompt modules
@@ -62,6 +62,7 @@ module.exports = {
   LLM_PROVIDERS,
   LANGUAGE_FILE_CONFIGS,
   LANGUAGE_ROLE_CONFIGS,
+  LANGUAGE_DEPENDENCY_CONFIGS,
 
   // Prompt components and checks
   SHARED_PROMPT_COMPONENTS,
