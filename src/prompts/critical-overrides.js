@@ -10,7 +10,7 @@ Policy:
 
 Auto-critical items (internal qa-frontend-cypress architectural violations):
 - Actions/methods in PO files → Anchor: function definition or cy.get() call in PO file. Fix: move actions to corresponding CC file, keep only string selectors in PO.
-- Direct selectors for test actions in test files → Anchor: cy.get().click(), cy.get().type(), or action-based selectors in spec.js files. Fix: use CC functions for test actions. Note: Conditional checks like $body.find().length are acceptable.
+- Direct selectors for test actions in test files → Anchor: cy.get().click(), cy.get().type(), or action-based selectors in spec.js files. Fix: use CC functions for test actions.
 - Missing corresponding PO file for CC → Anchor: CC file without matching PO import. Fix: create corresponding PO file following [module][component]PO.js pattern.
 - Hardcoded POS/currency/language values → Anchor: hardcoded strings 'sa', 'ae', 'SAR', 'AED', 'ar', 'en' without imports from customHelpers/configuration. Fix: use posConfiguration, currencyHelper, languageHelper imports.
 - Hardcoded calendar/session/environment values → Anchor: hardcoded month names, session properties, environment strings without imports from customHelpers/configuration. Fix: use calendarConfiguration, sessionConfiguration helpers.
@@ -27,9 +27,10 @@ Auto-critical items (general cypress/web automation best practices):
 - Unbounded operations or infinite loops in tests → Anchor: loop without exit condition. Fix: add proper bounds and timeouts.
 - Tests disabling browser security in production builds → Anchor: security config without environment guards. Fix: guard with test environment checks (if (Cypress.env('environment') === 'test')) or document justification.
 - Focused/skipped tests (it.only, it.skip, xit) committed → Anchor: test modifier. Fix: remove modifier before merge.
+- Non-deterministic conditional logic that always passes → Anchor: if/else/elseif blocks in CC methods or spec.js where all branches pass or only log without failing assertions. Includes element presence checks ($body.find().length), calculations, or feature state checks where test passes regardless of outcome. Fix: remove conditional logic; make tests deterministic. For state-dependent behavior: assert the state/condition first, then assert complete expected outcome for that state. For acceptable alternatives: use composite selectors (cy.get('selA, selB').should('exist')) or count-based assertions that fail when none match. Tests must assert specific behavior and fail when not met.
+- A/B experiments/variants accepting any outcome → Anchor: conditional checks for multiple variants/experiments where test passes regardless of which variant appears or if none appear (e.g., if (variantA) pass; else if (variantB) pass; else log). Fix: control the variant/experiment via feature flags, cookies, or mocks in test setup, then assert exact expected behavior for that specific variant AND assert absence of other variants. Write separate test cases for each variant. Each test verifies ONE specific variant scenario, not "any variant appeared."
 
-Note: Test credentials and controlled security bypasses are acceptable in automation context.
-
+Note: Test credentials and controlled security bypasses are acceptable in automation context. 
 
 Tests (≤2 lines examples):
 Internal architectural violations:
@@ -43,7 +44,9 @@ Internal architectural violations:
 General cypress best practices:
 - Brittle selector: cy.get('.btn:nth-child(2)') → cy.get('[data-testid="submit-btn"]').
 - Focused test: it.only('test') → it('test').
-- Auto-generated README: cypress/e2e/README.md → remove file, keep only root README.md.`,
+- Auto-generated README: cypress/e2e/README.md → remove file, keep only root README.md.
+- Non-deterministic conditional: if ($body.find(sel).length) pass; else log('not found') → remove conditional; use cy.get(sel).should('be.visible') or cy.get('selA, selB').should('exist').
+- A/B variant any outcome: if (variantA) pass; else if (variantB) pass → cy.setFeatureFlag('variant', 'A'); cy.get(variantA.selector).should('be.visible'); cy.get(variantB.selector).should('not.exist').`,
 
   qa_android: `Auto-Critical Overrides for Appium Android Tests — deterministic and absolute
 Policy:
