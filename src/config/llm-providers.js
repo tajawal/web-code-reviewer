@@ -48,13 +48,13 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
 const LLM_PROVIDERS = {
   openai: {
     url: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-4o-mini',
+    model: 'gpt-4o',
     headers: apiKey => ({
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`
     }),
     body: (prompt, diff) => ({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o',
       messages: [
         {
           role: 'system',
@@ -72,7 +72,7 @@ const LLM_PROVIDERS = {
   },
   claude: {
     url: 'https://api.anthropic.com/v1/messages',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-5-20250929',
     headers: apiKey => ({
       'Content-Type': 'application/json',
       'x-api-key': apiKey,

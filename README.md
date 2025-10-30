@@ -7,7 +7,7 @@ A GitHub Action that performs automated code reviews using Large Language Models
 - **🌍 Multi-Language Support**: Specialized review prompts for JavaScript/TypeScript, Python, Java, PHP, Swift, and QA Automation (Cypress, Appium, RestAssured)
 - **📊 Structured JSON Output**: Detailed analysis with severity scoring, risk factors, and confidence levels
 - **🔍 Smart File Filtering**: Language-specific file detection and filtering
-- **🤖 LLM Integration**: Supports both Claude Sonnet 4 and OpenAI GPT-4o-mini with unified system prompts
+- **🤖 LLM Integration**: Supports both Claude Sonnet 4.5 and OpenAI GPT-4o with unified system prompts
 - **🎯 Intelligent Merge Decisions**: Automatic merge blocking based on critical issues with confidence scoring
 - **📝 Enhanced PR Comments**: Rich, categorized review results with severity indicators
 - **⚡ Optimized Processing**: Intelligent chunking and rate limiting for large codebases
@@ -224,10 +224,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Required: GitHub token for API access
         with:
-          llm_provider: 'claude'  # or 'openai'
+          llm_provider: 'claude'  # 'claude' for Claude Sonnet 4.5 or 'openai' for GPT-4o
           language: 'js'          # js, python, java, php, swift, qa_web, qa_android, qa_backend
           claude_api_key: ${{ secrets.CLAUDE_API_KEY }}
-          # openai_api_key: ${{ secrets.OPENAI_API_KEY }}  # if using OpenAI
+          # openai_api_key: ${{ secrets.OPENAI_API_KEY }}  # if using OpenAI GPT-4o
           path_to_files: 'packages/,src/'
           base_branch: 'develop'
           max_tokens: '8000'      # Recommended: 8000+ for comprehensive reviews
