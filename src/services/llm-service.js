@@ -19,12 +19,15 @@ class LLMService {
   }
 
   /**
-   * Estimate token count for text (rough approximation)
+   * Estimate token count for text with improved precision
+   * Uses more conservative estimate to prevent overflow and ensure determinism
    */
   estimateTokenCount(prompt, diff) {
-    // Rough estimation: ~4 characters per token for code
+    // Improved estimation: ~3.5 characters per token for code (accounts for syntax complexity)
+    // Claude/GPT typically use 3-4 chars per token; use 3.5 for code-heavy content
     const totalText = prompt + diff;
-    return Math.ceil(totalText.length / 4);
+    // Add 10% safety buffer to prevent overflow and ensure consistency
+    return Math.ceil((totalText.length / 3.5) * 1.1);
   }
 
   /**

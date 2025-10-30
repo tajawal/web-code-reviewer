@@ -140,60 +140,43 @@ General automation best practices:
 const LANGUAGE_CRITICAL_OVERRIDES = {
   js: `Auto-Critical Overrides — deterministic and absolute
 
-Instruction precedence (apply in this order):
-1) Explicit Exceptions and Gates (this section)
-2) Category-specific rules (e.g., Performance → Event burst control)
-3) General scoring formula and tie-breakers
+CRITICAL SECURITY ISSUES (always critical if observed):
+- Unescaped user input into dangerous sinks: innerHTML, outerHTML, document.write, eval, Function, setTimeout/setInterval(string). Anchor: sink call with user input. Fix: safe DOM APIs, sanitization, templating.
+- Hardcoded secrets, API keys, tokens in source. Anchor: literal string. Fix: move to env/secret manager.
+- Direct prototype pollution (user input merged into Object.prototype). Anchor: Object.assign/spread. Fix: allowlist clone, patched libs.
+- Missing authentication/authorization on sensitive operations. Anchor: endpoint/function. Fix: explicit auth guard, RBAC.
+- SQL/NoSQL injection via string concatenation. Anchor: query call. Fix: parameterized queries.
+- Logging PII (names, emails, tokens, auth data). Anchor: console/log call. Fix: redact or remove from logs.
 
-Performance Critical Gate (Debounce present) — ABSOLUTE:
-If the same event path shows any debounce/throttle import OR call (e.g., lodash debounce/throttle, custom debounce):
-- You MUST NOT mark a performance issue as "critical" unless you also anchor code that satisfies IneffectiveProof (see below).
-- If IneffectiveProof is NOT satisfied, you MUST:
-  - set severity_proposed = "suggestion"
-  - set evidence_strength ≤ 2
-  - set confidence ≤ 0.5
-  - cap severity_score ≤ 2.00
+PERFORMANCE: Event Handler Debounce/Throttle
 
-IneffectiveProof (must anchor at least ONE of):
-- Debounced wrapper is recreated each render (created in component body without useMemo/useRef and depends on unstable values), OR
-- Debounce is created inside the handler (new instance per keystroke), OR
-- wait < 32ms for text input (effectively no delay), OR
-- Unstable deps cause identity churn of the debounced function, OR
-- Async side-effect without unmount cleanup AND a directly observable stale update/race.
+High-frequency handlers (onChange, onScroll, onResize, onKeyPress) require careful analysis:
 
-**CRITICAL CLARIFICATION for IneffectiveProof:**
-- useMemo(() => debounce(callback, delay), [callback]) is CORRECT React pattern - callback dependency is required to prevent stale closures
-- Only flag as ineffective if callback is unstable due to missing useCallback/useMemo in PARENT component
-- Do not assume parent component issues from props alone - mark as "suggestion" with evidence_strength ≤ 2, confidence ≤ 0.5
-- Debounce recreation when props change is NORMAL and NECESSARY React behavior, not a performance issue
+Default rule: Mark as SUGGESTION (not critical) unless heavy work is demonstrably expensive with evidence_strength >= 4
 
-Do not assume absence of a proper debounce just because its definition is outside the diff hunk. Missing definition ≠ proof of ineffectiveness.
+Three scenarios:
+1) NO mitigation + heavy work + evidence_strength >= 4 → Can be CRITICAL (impact 4, exploit 3, likelihood 3)
+2) Debounce/throttle present → Cap at SUGGESTION (developer showed intent to fix; absence of proof ≠ failure)
+3) Debounce proven ineffective (recreated each render + wait < 32ms + heavy work + evidence_strength >= 4) → Can be CRITICAL
 
-Auto-critical items (other categories):
-- Unescaped user input into dangerous DOM sinks: innerHTML, outerHTML, document.write, eval, Function, setTimeout/setInterval(string). Fix: safe DOM APIs, sanitization, templating.
-- Direct database queries without parameterization. Fix: parameterized queries, prepared statements, ORM builders.
-- Missing authentication/authorization checks in API routes or sensitive ops. Fix: explicit auth guard, RBAC/ABAC.
-- Hardcoded secrets, API keys, or credentials in source. Fix: remove from code, load via env/secret manager, rotate keys.
-- Unsafe deserialization of user data (JSON.parse untrusted, unsafe libs). Fix: schema validation, safe parser.
-- Prototype pollution (user input merged into Object.prototype). Fix: allowlist clone, patched libs.
-- Logging PII (names, emails, tokens, profiles) unless demonstrably stripped in production builds. Fix: remove/redact/gate logs.
+Key React patterns (do NOT flag as problems):
+- useMemo(() => debounce(callback, delay), [callback]) is CORRECT (callback dep prevents stale closure)
+- Debounce recreation when props change is NORMAL React behavior (shows proper dep management)
 
-Evidence defaults:
-- Direct untrusted sink: evidence_strength=5, confidence=0.9.
-- Risky sink but unclear taint: evidence_strength=3, confidence=0.6.
-- Dev-only guarded: suggestion, evidence_strength=2, confidence=0.5.
-- Debounce/Throttle evidence and score caps (Claude-specific):
-  • Mitigation observed but definition/cleanup not visible → evidence_strength ≤ 2, confidence ≤ 0.5, cap severity_score ≤ 2.00, severity_proposed="suggestion".
-  • IneffectiveProof satisfied with heavy work observed → impact=3–4, exploitability=3, likelihood=3, blast_radius=2, evidence_strength=3–4, confidence=0.7–0.8 (may reach "critical" if severity_score ≥ 3.60).
-  • Do not infer ineffectiveness from absence of the definition in the hunk; lack of definition is not evidence.
+Missing definition outside diff = cannot escalate (mark as suggestion, evidence_strength <= 2)
 
-Tests (≤2 lines examples):
-- DOM injection: "<script>alert(1)</script>" is not executed.
-- SQL injection: "' OR 1=1 --" does not alter query.
-- Auth: unauthorized /admin returns 401/403.
-- Secrets: no apiKey in build artifacts.
-- Prototype pollution: "__proto__" input does not mutate Object prototype.
-- Logging: prod build has no raw console.log(userData).
+Evidence defaults for security issues:
+- Direct untrusted sink observed: evidence_strength=5, confidence=0.9
+- Risky sink but unclear taint: evidence_strength=3, confidence=0.6
+- Dev-only guarded: suggestion, evidence_strength=2, confidence=0.5
+
+Tests to verify fixes (≤2 lines each):
+- DOM injection: "<script>alert(1)</script>" is not executed
+- SQL injection: "' OR 1=1 --" does not alter query
+- Auth: unauthorized /admin returns 401/403
+- Secrets: no apiKey in build artifacts
+- Prototype pollution: "__proto__" input does not mutate Object prototype
+- Logging: prod build has no raw console.log(userData)
 `,
 
   python: `Auto-critical Overrides — deterministic and absolute

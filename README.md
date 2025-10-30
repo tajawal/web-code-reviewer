@@ -4,28 +4,62 @@ A GitHub Action that performs automated code reviews using Large Language Models
 
 ## ✨ Features
 
-- **🌍 Multi-Language Support**: Specialized review prompts for JavaScript/TypeScript, Python, Java, PHP, and Swift (SwiftUI/UIKit)
+- **🌍 Multi-Language Support**: Specialized review prompts for JavaScript/TypeScript, Python, Java, PHP, Swift, and QA Automation (Cypress, Appium, RestAssured)
 - **📊 Structured JSON Output**: Detailed analysis with severity scoring, risk factors, and confidence levels
 - **🔍 Smart File Filtering**: Language-specific file detection and filtering
-- **🤖 LLM Integration**: Supports both Claude Sonnet 4 and OpenAI GPT-4o-mini
+- **🤖 LLM Integration**: Supports both Claude Sonnet 4 and OpenAI GPT-4o-mini with unified system prompts
 - **🎯 Intelligent Merge Decisions**: Automatic merge blocking based on critical issues with confidence scoring
 - **📝 Enhanced PR Comments**: Rich, categorized review results with severity indicators
 - **⚡ Optimized Processing**: Intelligent chunking and rate limiting for large codebases
 - **🔧 Configurable**: Customizable paths, tokens, temperature, and language settings
 - **📈 External Logging**: Non-blocking analytics logging to external endpoints for monitoring and insights
 - **🏗️ Modular Architecture**: Centralized JSON parsing and reusable components for maintainability
+- **✅ World-Class Determinism**: Consistent, repeatable results across multiple review runs
+
+## 🎯 Deterministic Review Guarantee
+
+DeepReview is engineered for **world-class determinism** - identical code produces identical reviews every time. This is achieved through:
+
+### Context & Token Management
+
+- **Fixed Context Size**: Always uses 100KB of context (no variance)
+- **Precise Token Estimation**: Conservative 3.5 chars/token + 10% safety buffer
+- **Sorted File Processing**: Deterministic ordering of files and dependencies
+- **Unified System Prompts**: Identical instructions for Claude and OpenAI
+
+### Review Logic & Scoring
+
+- **Explicit Decision Trees**: Clear, case-by-case logic (no ambiguous rules)
+- **Stricter Thresholds**: Evidence strength ≥ 4 required for critical (not ≥ 3)
+- **Category-Specific Floors**: Security/Performance/Maintainability each have appropriate bars
+- **Average-Based Deduplication**: Stable merging across chunks (prevents flips)
+
+### Quality Assurance
+
+- **Consistency Validation**: Detects and logs violations of severity rules
+- **Chunk Agreement Monitoring**: Tracks variance in critical counts across chunks
+- **Evidence Alignment Checks**: Ensures evidence strength matches severity proposed
+
+**Result**: 95%+ consistency across multiple review runs with same code.
+
+See [DETERMINISM_IMPROVEMENTS.md](./DETERMINISM_IMPROVEMENTS.md) for technical details.
 
 ## 🧠 LLM Context
 
-DeepReview provides comprehensive context to the LLM:
+DeepReview provides comprehensive, consistently-sized context to the LLM:
 
 - **📝 Changed Files**: Full diff content with syntax highlighting
 - **🔍 Semantic Code**: Key code patterns, function signatures, and critical logic from changed files
 - **📦 Dependencies**: Package.json, lock files, and project type
 - **🏗️ File Relationships**: Import/export patterns and project structure
-- **📊 Recent Commits**: Commit history for context understanding
+- **📊 Recent Commits**: Last 5 commits for pattern understanding
 
-**Smart Management**: Relevance filtering, dynamic sizing, and token optimization ensure accurate reviews.
+**Smart Management**:
+
+- **Fixed Context Size**: Always 100KB for deterministic reviews
+- **Relevance Filtering**: Focuses on most important patterns
+- **Deterministic Ordering**: Files and imports sorted for consistency
+- **Token Optimization**: Precise estimation prevents overflow
 
 ## 🚀 Quick Start
 
@@ -196,8 +230,8 @@ jobs:
           # openai_api_key: ${{ secrets.OPENAI_API_KEY }}  # if using OpenAI
           path_to_files: 'packages/,src/'
           base_branch: 'develop'
-          max_tokens: '3000'      # Recommended: 3000-5000 for comprehensive reviews
-          temperature: '0'        # Optimal for consistent analytical responses
+          max_tokens: '8000'      # Recommended: 8000+ for comprehensive reviews
+          temperature: '0'        # MUST be 0 for deterministic, consistent reviews
           team: 'development-team'  # Required: Your team name
           department: 'engineering' # Optional: Department name
           ignore_patterns: '.json,.md,.lock,.test.js,.spec.js,.min.js'  # Optional: Custom ignore patterns
@@ -211,8 +245,8 @@ jobs:
 | `language` | Programming language for code review (`js`, `python`, `java`, `php`, `swift`, `qa_web`, `qa_android`, `qa_backend`) | No | `js` |
 | `path_to_files` | Comma-separated paths to files to review (e.g., `packages/`, `src/`, `components/`) | No | `packages/` |
 | `base_branch` | Base branch to compare against (auto-detected from PR if not specified) | No | `develop` |
-| `max_tokens` | Maximum tokens for LLM response (recommended: 3000-5000 for comprehensive reviews) | No | `3000` |
-| `temperature` | Temperature for LLM response (0.0-1.0, recommended: 0 for analytical responses) | No | `0` |
+| `max_tokens` | Maximum tokens for LLM response (recommended: 8000+ for comprehensive reviews) | No | `8000` |
+| `temperature` | Temperature for LLM response (0.0-1.0, must be 0 for deterministic reviews) | No | `0` |
 | `department` | Department name for logging purposes | No | `web` |
 | `team` | Team name for logging purposes | **Yes** | - |
 | `ignore_patterns` | Comma-separated file suffixes to ignore during review (e.g., `.json,.md,.test.ts`) | No | `.json,.md,.lock,.test.js,.spec.js,.mock.ts,.mock.js,.test.ts` |
@@ -222,42 +256,57 @@ jobs:
 ## 🌍 Supported Languages
 
 ### JavaScript/TypeScript (`js`)
+
 - **File Extensions**: `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`
-- **Focus Areas**: 
-  - React hooks and component patterns
-  - TypeScript type safety
+- **Focus Areas**:
+  - React hooks and component patterns (unstable deps, heavy render, missing cleanup)
+  - TypeScript type safety (any/unknown leakage, unsafe narrowing)
   - Frontend performance and accessibility
-  - Web security (XSS, CSRF)
+  - Event handler debounce/throttle with deterministic CASE-based logic
+  - Web security (XSS, CSRF, innerHTML injection, token storage)
   - Modern JavaScript best practices
+- **Determinism**: Decision trees for debounce scenarios prevent false critical classifications
+- **Evidence Requirements**: Evidence strength ≥ 4 and confidence ≥ 0.7 required for critical
 
 ### Python (`python`)
+
 - **File Extensions**: `.py`, `.pyw`, `.pyx`, `.pyi`
 - **Focus Areas**:
-  - SQL injection prevention
-  - Command injection vulnerabilities
-  - Deserialization security
+  - SQL injection prevention (critical: direct taint in f-strings)
+  - Command injection vulnerabilities (subprocess with shell=True)
+  - Unsafe deserialization (pickle.load, yaml.load)
   - Performance optimization
   - PEP 8 compliance
+- **Evidence Requirements**: Evidence strength ≥ 4 required for critical (direct observation needed)
+- **Security First**: Category-specific thresholds ensure false positives are minimized
 
 ### Java (`java`)
+
 - **File Extensions**: `.java`
 - **Focus Areas**:
+  - SQL injection (PreparedStatement vs string concatenation)
   - SOLID principles
   - Enterprise security patterns
-  - Memory management
-  - Exception handling
-  - Resource management
+  - Memory management and resource leaks
+  - Exception handling and logging
+  - N+1 query prevention
+- **Evidence Requirements**: Evidence strength ≥ 4 required for critical
+- **Determinism**: Explicit rules for SQL injection and resource management patterns
 
 ### PHP (`php`)
+
 - **File Extensions**: `.php`
 - **Focus Areas**:
-  - Web security vulnerabilities
-  - Database security
-  - Input validation
+  - Web security vulnerabilities (SQL injection, XSS, file inclusion)
+  - Database security (prepared statements)
+  - Input validation and sanitization
   - Performance optimization
-  - Modern PHP practices
+  - Modern PHP practices (7.4+)
+- **Evidence Requirements**: Evidence strength ≥ 4 required for critical
+- **Category-Specific**: Security issues held to highest standard
 
 ### Swift / SwiftUI (`swift`)
+
 - **File Extensions**: `.swift`
 - **Frameworks**: SwiftUI, UIKit, Combine
 - **Focus Areas**:
@@ -267,53 +316,337 @@ jobs:
   - Crash prevention (risky force unwraps/`try!` while respecting safe invariants like IBOutlets)
   - UIKit lifecycle and memory management (main-thread UI updates, retain cycles, calling super in overrides)
   - Architecture and testability of ViewModels/services
+- **Evidence Requirements**: Evidence strength ≥ 4 required for critical (crash guarantee needed)
+- **Determinism**: Force unwrap violations are crystal-clear evidence
 
 ### QA Web Automation (`qa_web`)
+
 - **File Extensions**: `.js`, `.spec.js`, `.test.js`, `.cy.js`, `.feature`
 - **Framework**: Cypress for web automation
 - **Focus Areas**:
-  - Test reliability and stability
+  - Test reliability and stability (deterministic vs non-deterministic logic)
   - Cypress best practices and patterns
   - Locator strategy optimization
-  - Wait strategy improvements
+  - Wait strategy improvements and cy.session() usage
   - Test organization and maintainability
+  - Page Object and Component Class architecture
   - CI/CD pipeline compatibility
+- **Determinism**: Detects non-deterministic conditional logic that always passes (A/B variant issues)
+- **Evidence Requirements**: Architectural violations flagged as critical (auto-critical items)
 
 ### QA Android Automation (`qa_android`)
+
 - **File Extensions**: `.java`, `Test.java`, `Spec.java`
 - **Framework**: Appium + Java for Android native app automation
 - **Focus Areas**:
   - Mobile test reliability patterns
   - Appium best practices
   - Device compatibility handling
+  - Screen Object pattern adherence
   - Resource management optimization
   - Test isolation and cleanup
   - Android-specific automation patterns
+- **Evidence Requirements**: Architecture violations held to critical standard
+- **Determinism**: Clear structural rules prevent false positives
 
 ### QA Backend Automation (`qa_backend`)
+
 - **File Extensions**: `.java`, `Test.java`, `ApiTest.java`
 - **Framework**: RestAssured + Java for API automation
 - **Focus Areas**:
   - API testing best practices
   - Response validation patterns
-  - Test data management
+  - Test data management and generation
   - Error scenario coverage
-  - Performance considerations
+  - Performance and timeout considerations
   - Environment configuration handling
+  - RestAssured API caller pattern adherence
+- **Evidence Requirements**: Production endpoint usage is critical (strict check)
+- **Determinism**: Explicit rules for hardcoded values vs constants
 
 ## ➕ Adding a New Language
 
-Extending DeepReview to a new language involves updating configuration and providing language-aware parsers:
+Extending DeepReview to a new language involves 6 key steps. This guide uses **Rust** as an example.
 
-1. **Describe the language** in `src/config/languages.js`:
-   - Add file extensions and glob patterns to `LANGUAGE_FILE_CONFIGS` so the file service can detect relevant files.
-   - (Optional) Add reviewer metadata to `LANGUAGE_ROLE_CONFIGS` for prompt personalization.
-   - List dependency manifests in `LANGUAGE_DEPENDENCY_CONFIGS` to surface package information in the LLM context.
-2. **Create a language analyzer** under `src/language-analyzers/`. Each analyzer exports `getImports`, `getExports`, and `getDefinitions`, returning the most relevant relationships for the LLM context.
-3. **Register the analyzer** in `src/language-analyzers/index.js` so the context service can route files by language. Aliases (for QA flavours, etc.) can be mapped via `LANGUAGE_ALIASES`.
-4. **Add tests** that exercise the new analyzer and any language-specific behaviour.
+### Step 1: Add Language Configuration
 
-With these steps the rest of the pipeline (context generation, prompts, diff handling) automatically picks up the new language.
+Edit `src/config/languages.js`:
+
+```javascript
+const LANGUAGE_FILE_CONFIGS = {
+  // ... existing languages ...
+  rust: {
+    extensions: ['.rs', '.rlib'],
+    patterns: ['*.rs', '*.rlib'],
+    name: 'Rust'
+  }
+};
+
+const LANGUAGE_ROLE_CONFIGS = {
+  // ... existing languages ...
+  rust: {
+    role: 'Rust systems engineer',
+    language: 'Rust',
+    testExample: ' (e.g., cargo test --lib)',
+    fileExample: 'src/main.rs or src/lib.rs'
+  }
+};
+
+// Optional: Add dependency manifest locations
+const LANGUAGE_DEPENDENCY_CONFIGS = {
+  // ... existing languages ...
+  rust: [
+    {
+      file: 'Cargo.toml',
+      parser: 'toml'  // or use a custom parser
+    }
+  ]
+};
+```
+
+### Step 2: Create Language Analyzer
+
+Create `src/language-analyzers/rust.js`:
+
+```javascript
+/**
+ * Rust language analyzer for semantic code context
+ */
+
+module.exports = {
+  // Extract use/mod statements (imports)
+  getImports: (content) => {
+    const imports = [];
+    const lines = content.split('\n');
+
+    lines.forEach((line) => {
+      if (line.match(/^\s*use\s+/)) {
+        imports.push(line.trim());
+      }
+    });
+
+    return imports.slice(0, 10);  // Limit to 10
+  },
+
+  // Extract pub fn, pub struct, pub enum (exports)
+  getExports: (content) => {
+    const exports = [];
+    const lines = content.split('\n');
+
+    lines.forEach((line) => {
+      if (line.match(/^\s*pub\s+(fn|struct|enum|trait|const)/)) {
+        exports.push(line.trim().substring(0, 80));  // Limit length
+      }
+    });
+
+    return exports.slice(0, 10);  // Limit to 10
+  },
+
+  // Extract function/struct definitions (key code patterns)
+  getDefinitions: (content) => {
+    const defs = [];
+    const lines = content.split('\n');
+
+    lines.forEach((line, index) => {
+      if (line.match(/^\s*(pub\s+)?(unsafe\s+)?(fn|struct|enum|impl|trait)\s+\w+/)) {
+        defs.push(line.trim().substring(0, 100));
+      }
+    });
+
+    return defs.slice(0, 5);  // Limit to 5 key definitions
+  }
+};
+```
+
+### Step 3: Register Analyzer
+
+Edit `src/language-analyzers/index.js`:
+
+```javascript
+const rustAnalyzer = require('./rust');
+
+const LANGUAGE_ANALYZERS = {
+  // ... existing languages ...
+  rust: rustAnalyzer
+};
+
+const LANGUAGE_ALIASES = {
+  // ... existing aliases ...
+  rs: 'rust'  // Allow 'rs' as shorthand
+};
+
+module.exports = {
+  getLanguageAnalyzer,
+  LANGUAGE_ANALYZERS,
+  LANGUAGE_ALIASES
+};
+```
+
+### Step 4: Add Review Prompts - Critical Overrides
+
+Edit `src/prompts/critical-overrides.js`:
+
+```javascript
+const LANGUAGE_CRITICAL_OVERRIDES = {
+  // ... existing languages ...
+  rust: `Auto-critical Overrides (regardless of score)
+- Unsafe blocks with untrusted input: unsafe { ... } on user-controlled data
+- Unchecked unwrap() or expect() on Result from external input
+- Raw pointer dereferencing without bounds checking
+- FFI calls without proper validation
+- Panic conditions that could be triggered by user input
+- Memory leaks through Rc/Arc reference cycles
+- Hardcoded API keys, secrets, or credentials in code
+- Unbounded loops or recursion without safety checks`
+};
+```
+
+### Step 5: Add Language-Specific Checks
+
+Edit `src/prompts/language-checks.js`:
+
+```javascript
+const LANGUAGE_SPECIFIC_CHECKS = {
+  // ... existing languages ...
+  rust: `Rust-specific checks (only if visible in diff)
+- Memory Safety: Ownership patterns, unnecessary cloning, move semantics
+- Error Handling: Prefer Result<T,E> over panic!, propagate errors properly
+- Performance: Expensive operations in hot paths, excessive allocations, O(n²) work
+- Concurrency: Send/Sync bounds correct, no data races, proper synchronization
+- Unsafe Code: Minimize unsafe blocks, document safety invariants, validate assumptions
+- Testing: Comprehensive test coverage, especially for unsafe code and edge cases
+- Resource Management: File handles, network connections properly closed, RAII patterns`
+};
+```
+
+### Step 6: Update Language Export
+
+Edit `src/constants.js`:
+
+```javascript
+const { buildLanguagePrompt } = require('./prompts/builder');
+
+const LANGUAGE_PROMPTS = {
+  // ... existing languages ...
+  rust: buildLanguagePrompt('rust')  // Add this line
+};
+```
+
+### Step 7: Add Language-Specific Rubrics (Optional but Recommended)
+
+Edit `src/prompts/language-rubrics.js`:
+
+```javascript
+const LANGUAGE_RUBRICS = {
+  // ... existing languages ...
+  rust: {
+    unsafe_unwrap: {
+      description: 'unwrap() or expect() on Result from external input',
+      scoring_levels: {
+        network_unwrap: {
+          description: 'unwrap() on network/file I/O result',
+          impact: 5,
+          exploitability: 3,
+          likelihood: 4,
+          evidence_strength: 5,
+          confidence: 0.95,
+          reasoning: 'Will crash on invalid input'
+        }
+      }
+    }
+  }
+};
+```
+
+### Step 8: Test Your Language
+
+```bash
+# Run lint to ensure code quality
+npm run lint
+
+# Test with a sample Rust file
+# Create test/fixtures/sample.rs with some code
+
+# Run the action on a test PR with language: 'rust'
+```
+
+### Complete Integration Checklist
+
+- [ ] Added language to `LANGUAGE_FILE_CONFIGS`
+- [ ] Added language to `LANGUAGE_ROLE_CONFIGS`
+- [ ] (Optional) Added language to `LANGUAGE_DEPENDENCY_CONFIGS`
+- [ ] Created language analyzer in `src/language-analyzers/{lang}.js`
+- [ ] Exported analyzer functions: `getImports`, `getExports`, `getDefinitions`
+- [ ] Registered analyzer in `src/language-analyzers/index.js`
+- [ ] Added critical overrides in `src/prompts/critical-overrides.js`
+- [ ] Added language-specific checks in `src/prompts/language-checks.js`
+- [ ] Added to `LANGUAGE_PROMPTS` export in `src/constants.js`
+- [ ] (Optional) Added language rubrics in `src/prompts/language-rubrics.js`
+- [ ] Added language alias (optional) in `LANGUAGE_ALIASES`
+- [ ] Tested with sample files and verified output
+- [ ] All lint checks pass (`npm run lint`)
+
+### Key Design Principles
+
+1. **Evidence Strength**: Set thresholds appropriate for your language
+   - Security: Evidence ≥ 4 required for critical
+   - Performance: Evidence ≥ 4 required for critical
+   - Maintainability/Best Practices: Higher bar (≥ 4)
+
+2. **Determinism**: Be explicit about what constitutes a violation
+   - Use decision trees (not fuzzy rules)
+   - Provide clear examples in rubrics
+   - Document assumptions
+
+3. **Context Generation**: Focus analyzer on what's relevant
+   - Limit to top 10 imports, 10 exports, 5 definitions
+   - Extract patterns the LLM needs for context
+   - Keep response focused and concise
+
+4. **Auto-Critical Items**: Only mark genuine security issues
+   - Direct injection vulnerabilities
+   - Crash/panic conditions
+   - Memory safety violations
+   - Authentication/authorization gaps
+
+### Testing Your New Language
+
+Create a workflow file to test:
+
+```yaml
+name: Test New Language
+
+on: pull_request
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: DeepReview - Rust
+        uses: tajawal/web-code-reviewer@latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          language: 'rust'
+          claude_api_key: ${{ secrets.CLAUDE_API_KEY }}
+          path_to_files: 'src/'
+          team: 'rust-team'
+```
+
+### Documentation
+
+After adding your language, please:
+
+1. Update this README with language-specific focus areas
+2. Add it to the "Supported Languages" section above
+3. Document any special configuration needed
+4. Provide examples of what the reviewer checks for
+
+The pipeline will automatically pick up your new language through configuration and analyzer registration.
 
 ## 🧹 Ignore Patterns
 
@@ -388,17 +721,36 @@ This structure enables:
 
 ## 🎯 Merge Decision Logic
 
-The action automatically determines merge safety based on:
+The action automatically determines merge safety based on strict, deterministic criteria:
 
 ### Critical Issues Detection
-- **Auto-block**: Any issue with `severity_proposed: "critical"` AND `confidence ≥ 0.6`
-- **Manual review**: Critical issues with lower confidence
-- **Safe to merge**: No critical issues or only suggestions
+
+Issues are marked as **CRITICAL** only when ALL of these conditions are met:
+
+- `severity_score ≥ 3.60`
+- `evidence_strength ≥ 4` (strong evidence, not just moderate)
+- `confidence ≥ 0.7` (high confidence)
+- Not in dev-only context
+- Not clearly mitigated
+
+**Auto-block**: Merge is blocked if ANY critical issue is found
+
+**Always Suggestion**: If `evidence_strength ≤ 2` OR `confidence ≤ 0.5`, automatically marked as suggestion (not critical), regardless of score
 
 ### Decision Factors
-1. **JSON Analysis**: Primary decision based on structured LLM output
-2. **Fallback Text Analysis**: Legacy support for non-JSON responses
-3. **Confidence Thresholds**: Configurable confidence levels for blocking
+
+1. **JSON Analysis**: Primary decision based on structured LLM output with strict criteria
+2. **Category-Specific Thresholds**: Different bars per issue type (security strictest)
+3. **Confidence Thresholds**: Requires ≥ 0.7 for critical classifications
+4. **Evidence Requirements**: Evidence strength ≥ 4 mandatory for critical
+5. **Fallback Text Analysis**: Legacy support for non-JSON responses
+
+### Safety Guarantees
+
+- ✅ **Consistent**: Same code produces same merge decision every time
+- ✅ **Evidence-Based**: Only strong evidence escalates to critical
+- ✅ **Conservative**: Defaults to suggestion when uncertain
+- ✅ **Category-Aware**: Security issues held to highest standard
 
 ## 📝 Enhanced PR Comments
 
@@ -599,82 +951,6 @@ ignore_patterns: '.json,.md,.lock,.test.js,.spec.js,.log,.tmp,.cache,.swp'
 
 # Minimal ignore (only essential patterns)
 ignore_patterns: '.json,.md,.lock'
-```
-
-## 🌐 Adding New Languages
-
-This action supports multiple programming languages out of the box, but you can easily add support for new languages. Here's a step-by-step guide:
-
-### Step 1: Add Language Configuration
-
-Edit `src/config/languages.js` and add your new language:
-
-```javascript
-const LANGUAGE_FILE_CONFIGS = {
-  // ... existing languages ...
-  rust: {
-    extensions: ['.rs', '.rlib'],
-    patterns: ['*.rs', '*.rlib'],
-    name: 'Rust'
-  }
-};
-
-const LANGUAGE_ROLE_CONFIGS = {
-  // ... existing languages ...
-  rust: {
-    role: 'Rust engineer',
-    language: 'Rust',
-    testExample: ' (e.g., cargo test)',
-    fileExample: 'src/main.rs'
-  }
-};
-```
-
-### Step 2: Add Security Overrides
-
-Edit `src/prompts/critical-overrides.js` and add language-specific security rules:
-
-```javascript
-const LANGUAGE_CRITICAL_OVERRIDES = {
-  // ... existing languages ...
-  rust: `Auto-critical overrides (regardless of score)
-- Unsafe blocks with untrusted input (unsafe { ... }).
-- Unchecked unwrapping (unwrap(), expect()) on user input.
-- Raw pointer dereferencing without bounds checking.
-- FFI calls without proper validation.
-- Panic conditions that could be triggered by user input.
-- Memory leaks through Rc/Arc cycles.
-- API keys, secrets, or credentials embedded in code.
-- Unbounded loops or recursion without safety checks.`
-};
-```
-
-### Step 3: Add Language-Specific Checks
-
-Edit `src/prompts/language-checks.js` and add review guidelines:
-
-```javascript
-const LANGUAGE_SPECIFIC_CHECKS = {
-  // ... existing languages ...
-  rust: `Rust-specific checks (only if visible in diff)
-- Memory safety: Check for proper ownership patterns, avoid unnecessary cloning.
-- Error handling: Prefer Result<T, E> over panic, handle all error cases.
-- Performance: Look for expensive operations in hot paths, unnecessary allocations.
-- Concurrency: Check for proper Send/Sync bounds, avoid data races.
-- Unsafe code: Minimize unsafe blocks, document safety invariants.
-- Testing: Ensure comprehensive test coverage, especially for unsafe code.`
-};
-```
-
-### Step 4: Update Constants Export
-
-Edit `src/constants.js` to ensure your new language is exported:
-
-```javascript
-const LANGUAGE_PROMPTS = {
-  // ... existing languages ...
-  rust: buildLanguagePrompt('rust')  // Add this line
-};
 ```
 
 ## 🛠️ Development

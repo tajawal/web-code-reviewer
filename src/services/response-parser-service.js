@@ -199,15 +199,19 @@ class ResponseParserService {
           existingIssue.chunks.push(issue.chunk);
         }
 
-        // Update confidence to highest value
-        if (issue.confidence > existingIssue.confidence) {
-          existingIssue.confidence = issue.confidence;
-        }
+        // CHANGED: Use AVERAGE instead of MAX for determinism
+        // Taking average prevents flipping from suggestion to critical based on one chunk's higher score
+        // Example: Chunk A (score=3.4, confidence=0.6) + Chunk B (score=3.7, confidence=0.8)
+        // Old (MAX): Would take 3.7/0.8 → might escalate to critical
+        // New (AVG): Would take 3.55/0.7 → stays suggestion
+        const existingConfidence = existingIssue.confidence || 0;
+        const existingScore = existingIssue.severity_score || 0;
 
-        // Update severity score to highest value
-        if (issue.severity_score > existingIssue.severity_score) {
-          existingIssue.severity_score = issue.severity_score;
-        }
+        // Average confidence (more stable)
+        existingIssue.confidence = (existingConfidence + issue.confidence) / 2;
+
+        // Average severity score (prevents classification flipping)
+        existingIssue.severity_score = (existingScore + issue.severity_score) / 2;
       } else {
         // New issue, add to map and result
         const newIssue = {

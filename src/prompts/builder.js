@@ -24,6 +24,8 @@ ${SHARED_PROMPT_COMPONENTS.scopeAndExclusions}
 
 ${SHARED_PROMPT_COMPONENTS.severityScoring}
 
+${SHARED_PROMPT_COMPONENTS.categorySpecificSeverity}
+
 ${LANGUAGE_CRITICAL_OVERRIDES[language]}
 
 ${LANGUAGE_SPECIFIC_CHECKS[language]}
