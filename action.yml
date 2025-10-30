@@ -4,7 +4,7 @@ author: 'Tajawal'
 
 inputs:
   llm_provider:
-    description: 'LLM provider to use (claude or openai)'
+    description: 'LLM provider to use (claude for Sonnet 4.5 or openai for GPT-4o)'
     required: false
     default: 'claude'
   path_to_files:
@@ -20,18 +20,18 @@ inputs:
     required: false
     default: 'develop'
   max_tokens:
-    description: 'Maximum tokens for LLM response (recommended: 4000-6000 for comprehensive reviews)'
+    description: 'Maximum tokens for LLM response (recommended: 8000 for comprehensive reviews)'
     required: false
-    default: '5000'
+    default: '8000'
   temperature:
-    description: 'Temperature for LLM response (0.0-1.0)'
+    description: 'Temperature for LLM response (0.0-1.0, must be 0 for deterministic reviews)'
     required: false
-    default: '0.3'
+    default: '0'
   openai_api_key:
-    description: 'OpenAI API key (required if provider is openai)'
+    description: 'OpenAI API key for GPT-4o (required if provider is openai)'
     required: false
   claude_api_key:
-    description: 'Claude API key (required if provider is claude)'
+    description: 'Anthropic API key for Claude Sonnet 4.5 (required if provider is claude)'
     required: false
   department:
     description: 'Department name for logging purposes'
