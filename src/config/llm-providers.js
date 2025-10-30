@@ -79,7 +79,7 @@ const LLM_PROVIDERS = {
       'anthropic-version': '2023-06-01'
     }),
     body: (prompt, diff) => ({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: CORE_CONFIG.MAX_TOKENS,
       temperature: CORE_CONFIG.TEMPERATURE,
       messages: [
