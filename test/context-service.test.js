@@ -192,7 +192,7 @@ Refactor user service`;
       expect(result).toContain('Add new feature');
       expect(result).toContain('Fix bug in authentication');
       expect(execSync).toHaveBeenCalledWith(
-        'git log --oneline --no-merges origin/main..HEAD | head -15 | sed \'s/^[a-f0-9]* //\'',
+        'git log --oneline --no-merges origin/main..HEAD | head -5 | sed \'s/^[a-f0-9]* //\'',
         expect.objectContaining({
           encoding: 'utf8',
           maxBuffer: 5242880,
@@ -358,10 +358,11 @@ export default App;`;
       expect(result).toBeLessThanOrEqual(CONTEXT_CONFIG.MAX_CONTEXT_SIZE_LARGE);
     });
 
-    it('should return min size for very large token counts', () => {
+    it('should return fixed size for large token counts', () => {
+      // With fixed context size, all calls return the same size regardless of token count
       const result = contextService.calculateDynamicContextSize(1000000);
-      
-      expect(result).toBe(CONTEXT_CONFIG.MIN_CONTEXT_SIZE);
+
+      expect(result).toBe(CONTEXT_CONFIG.FIXED_CONTEXT_SIZE);
     });
 
     it('should return min size for very small token counts', () => {

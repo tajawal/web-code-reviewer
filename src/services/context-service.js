@@ -97,25 +97,24 @@ class ContextService {
   }
 
   /**
-   * Calculate dynamic context size based on available tokens
+   * Get fixed context size for deterministic reviews
+   * CHANGED: Now uses FIXED size instead of dynamic calculation
    */
-  calculateDynamicContextSize(estimatedTokens, maxTokens = 200000) {
-    const availableTokens = maxTokens - estimatedTokens;
-    const contextTokens = Math.floor(availableTokens * CONTEXT_CONFIG.CONTEXT_TOKEN_RATIO);
+  getContextSize() {
+    // Use FIXED context size for determinism
+    const contextSize = CONTEXT_CONFIG.FIXED_CONTEXT_SIZE;
 
-    // Convert tokens to bytes (rough approximation: 4 chars per token)
-    const contextSize = contextTokens * 4;
+    core.info(`🎯 Using FIXED context size: ${Math.round(contextSize / 1024)}KB (deterministic)`);
+    return contextSize;
+  }
 
-    // Apply min/max limits
-    const finalSize = Math.max(
-      CONTEXT_CONFIG.MIN_CONTEXT_SIZE,
-      Math.min(contextSize, CONTEXT_CONFIG.MAX_CONTEXT_SIZE_LARGE)
-    );
-
-    core.info(
-      `🎯 Dynamic context size: ${Math.round(finalSize / 1024)}KB (${contextTokens} tokens available)`
-    );
-    return finalSize;
+  /**
+   * @deprecated Use getContextSize() instead
+   * Kept for backward compatibility
+   */
+  calculateDynamicContextSize(_estimatedTokens, _maxTokens = 200000) {
+    // Fallback to fixed context size
+    return this.getContextSize();
   }
 
   /**
@@ -340,8 +339,11 @@ class ContextService {
           return context;
         }
 
+        // DETERMINISM FIX: Sort files to ensure consistent order across runs
+        const sortedFiles = [...changedFiles].sort((a, b) => a.localeCompare(b));
+
         // Analyze each changed file for comprehensive relationships
-        for (const file of changedFiles) {
+        for (const file of sortedFiles) {
           try {
             context += `\n🔗 ${file}:\n`;
 
@@ -406,8 +408,11 @@ class ContextService {
           return context;
         }
 
+        // DETERMINISM FIX: Sort files to ensure consistent order across runs
+        const sortedFiles = [...changedFiles].sort((a, b) => a.localeCompare(b));
+
         // Analyze each changed file for semantic understanding
-        for (const file of changedFiles) {
+        for (const file of sortedFiles) {
           try {
             context += `\n🔍 ${file}:\n`;
 

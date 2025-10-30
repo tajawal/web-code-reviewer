@@ -4,6 +4,7 @@
 
 const core = require('@actions/core');
 const ResponseParserService = require('./response-parser-service');
+const ConsistencyValidator = require('./consistency-validator');
 const { CONFIG, getLanguageForFile } = require('../constants');
 
 class ReviewService {
@@ -171,7 +172,7 @@ class ReviewService {
    */
   generatePRComment(
     shouldBlockMerge,
-    changedFiles,
+    _changedFiles,
     llmResponse,
     _department,
     _team,
@@ -187,6 +188,19 @@ class ReviewService {
 
     // Extract issues and metadata using centralized function
     const extractedData = ResponseParserService.extractIssuesFromResponse(llmResponse);
+
+    // Validate consistency of extracted issues
+    const consistencyResults = ConsistencyValidator.validateAll(
+      extractedData.issues,
+      extractedData.chunkResults
+    );
+
+    // Log consistency findings
+    if (!consistencyResults.isFullyConsistent) {
+      core.warning(
+        `⚠️  Consistency validation warnings detected (${consistencyResults.evidenceConsistency.violations.length + consistencyResults.scoringConsistency.violations.length} violations)`
+      );
+    }
 
     // Create review summary
     let reviewSummary = '';

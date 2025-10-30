@@ -33,12 +33,23 @@ Determinism & Output Contract
 - Mitigation precedence: When both risk and a recognized debounce/throttle mitigation are present, apply the Performance Critical Gate and Debounce/Throttle caps BEFORE computing or escalating severity.
 `,
 
-  // Common severity scoring
-  severityScoring: `Severity Scoring
+  // Common severity scoring (UPDATED: stricter thresholds for world-class determinism)
+  severityScoring: `Severity Scoring (Deterministic Rubrics)
 For EACH issue, assign 0–5 scores for: impact, exploitability, likelihood, blast_radius, evidence_strength.
 Compute: severity_score = 0.35*impact + 0.30*exploitability + 0.20*likelihood + 0.10*blast_radius + 0.05*evidence_strength
-Set severity_proposed:
-- "critical" if severity_score ≥ 3.60 AND evidence_strength ≥ 3
+
+REFERENCE EVIDENCE STRENGTH SCALE (use this when scoring):
+0: No code evidence, pure assumption
+1: Weak hint but mostly assumption
+2: Indirect evidence (missing definition, assumes behavior)
+3: Moderate evidence (visible in diff, one factor uncertain)
+4: Strong evidence (clearly visible, all factors observable) ← Required for critical
+5: Crystal clear (absolutely certain, no assumptions)
+
+Set severity_proposed (STRICTER THRESHOLDS):
+- "critical" ONLY if ALL of: severity_score ≥ 3.60 AND evidence_strength ≥ 4 AND confidence ≥ 0.7
+- If evidence_strength ≤ 2: ALWAYS "suggestion" (regardless of score)
+- If confidence ≤ 0.5: ALWAYS "suggestion" (regardless of score)
 - Otherwise "suggestion"`,
 
   // Common evidence requirements
@@ -64,6 +75,38 @@ If a fix cannot be precisely anchored, mark evidence_strength ≤ 2 and confiden
 - Direct risky sink observed: evidence_strength = 4–5, confidence ≥ 0.8
 - Indirect/potential issue: evidence_strength = 2, confidence = 0.5
 - Cross-file assumptions: cap evidence_strength at 2 and confidence at 0.5`,
+
+  // Category-specific severity thresholds (ADDED: deterministic by category)
+  categorySpecificSeverity: `Category-Specific Severity Thresholds
+These override the general rule to provide appropriate rigor per issue type:
+
+SECURITY (strictest: only strongest evidence escalates):
+- Min evidence for critical: 4 (strong evidence required)
+- Min confidence for critical: 0.8
+- Min score for critical: 3.40
+- Default severity: "suggestion" (unless proven critical)
+- Reasoning: Security issues should err on side of caution; false positives are acceptable
+
+PERFORMANCE (strict: need proof of impact):
+- Min evidence for critical: 4
+- Min confidence for critical: 0.75
+- Min score for critical: 3.60
+- Default severity: "suggestion"
+- Reasoning: Must show actual performance regression, not just potential
+
+MAINTAINABILITY (very strict: rarely critical):
+- Min evidence for critical: 4
+- Min confidence for critical: 0.8
+- Min score for critical: 4.00 (higher bar)
+- Default severity: "suggestion"
+- Reasoning: Code quality issues are not usually blockers
+
+BEST_PRACTICES (extremely strict: almost never critical):
+- Min evidence for critical: 5 (crystal clear only)
+- Min confidence for critical: 0.95
+- Min score for critical: 4.50 (very high bar)
+- Default severity: "suggestion"
+- Reasoning: Best practice violations are educational, not blocking`,
 
   // Common final policy
   finalPolicy: `Final Recommendation

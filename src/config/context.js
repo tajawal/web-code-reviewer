@@ -1,18 +1,23 @@
 /**
  * Context configuration for enhanced LLM prompts
+ * FIXED context size for deterministic reviews
  */
 
 const CONTEXT_CONFIG = {
-  // Context size limits (dynamic based on available tokens)
+  // FIXED context size for determinism (not dynamic)
+  // Using fixed size ensures every review gets consistent context
+  FIXED_CONTEXT_SIZE: 100 * 1024, // 100KB fixed context - provides good balance
+
+  // Legacy dynamic sizing (kept for backward compatibility, but not used)
   MAX_CONTEXT_SIZE: 120 * 1024, // 120KB max context size (fallback) - increased for better context
   MAX_PROJECT_FILES: 30, // Max files to include in project structure
-  MAX_COMMIT_HISTORY: 15, // Max commits to include in recent history
-  MAX_IMPORT_LINES: 15, // Max import lines per file
+  MAX_COMMIT_HISTORY: 5, // Reduced from 15 for more focused context
+  MAX_IMPORT_LINES: 10, // Reduced from 15 for more focused context
 
-  // Dynamic context sizing based on available tokens
-  CONTEXT_TOKEN_RATIO: 0.35, // Use 35% of available tokens for context (increased from 30%)
-  MIN_CONTEXT_SIZE: 20 * 1024, // 20KB minimum context size (increased from 15KB)
-  MAX_CONTEXT_SIZE_LARGE: 200 * 1024, // 200KB maximum context size (increased from 150KB)
+  // Legacy dynamic context sizing (NOT USED - kept for reference)
+  CONTEXT_TOKEN_RATIO: 0.35, // DEPRECATED: Use FIXED_CONTEXT_SIZE instead
+  MIN_CONTEXT_SIZE: 20 * 1024, // DEPRECATED: Use FIXED_CONTEXT_SIZE instead
+  MAX_CONTEXT_SIZE_LARGE: 200 * 1024, // DEPRECATED: Use FIXED_CONTEXT_SIZE instead
 
   // Cost optimization settings
   ENABLE_COST_OPTIMIZATION: false, // Set to true to enable smart context scaling
