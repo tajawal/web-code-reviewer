@@ -136,6 +136,29 @@ class ContextService {
   }
 
   /**
+   * Find all instances of a file in the project (for monorepos)
+   */
+  findAllFilesInProject(fileName) {
+    try {
+      // Use git ls-files to find all instances, respecting .gitignore
+      const command = `git ls-files | grep -E '(^|/)${fileName}$' || true`;
+      const output = ShellExecutor.execute(command);
+
+      if (!output || !output.trim()) {
+        return [];
+      }
+
+      return output
+        .trim()
+        .split('\n')
+        .filter(path => path && path.trim())
+        .sort(); // Sort for deterministic order
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Safely read dependency file content
    */
   readDependencyFile(filePath, maxLines) {
@@ -162,19 +185,18 @@ class ContextService {
 
   /**
    * Render dependency section based on configuration
+   * Supports monorepos by finding all instances of the file
    */
   renderDependencySection(config) {
+    // For parseable files (package.json, composer.json), find all instances in monorepos
+    if (config.parser === 'nodePackage' || config.parser === 'composerPackage') {
+      return this.renderAllDependencyFiles(config);
+    }
+
+    // For lock files, only read from root
     const content = this.readDependencyFile(config.file, config.maxLines);
     if (!content) {
       return null;
-    }
-
-    if (config.parser === 'nodePackage') {
-      return this.renderNodePackageSection(content);
-    }
-
-    if (config.parser === 'composerPackage') {
-      return this.renderComposerPackageSection(content);
     }
 
     const label = config.label || config.file;
@@ -183,12 +205,51 @@ class ContextService {
   }
 
   /**
+   * Find and render all instances of a dependency file (for monorepos)
+   */
+  renderAllDependencyFiles(config) {
+    const allFiles = this.findAllFilesInProject(config.file);
+
+    if (allFiles.length === 0) {
+      return null;
+    }
+
+    const sections = [];
+
+    for (const filePath of allFiles) {
+      const content = this.readDependencyFile(filePath, config.maxLines);
+      if (!content) {
+        continue;
+      }
+
+      if (config.parser === 'nodePackage') {
+        const section = this.renderNodePackageSection(content, filePath);
+        if (section) sections.push(section);
+      } else if (config.parser === 'composerPackage') {
+        const section = this.renderComposerPackageSection(content, filePath);
+        if (section) sections.push(section);
+      }
+    }
+
+    if (sections.length === 0) {
+      return null;
+    }
+
+    // If multiple files found, add monorepo context
+    if (sections.length > 1) {
+      return `📦 Monorepo detected (${sections.length} ${config.file} files):\n\n${sections.join('\n\n')}`;
+    }
+
+    return sections[0];
+  }
+
+  /**
    * Provide compact summary for package.json dependencies
    */
-  renderNodePackageSection(content) {
+  renderNodePackageSection(content, filePath = 'package.json') {
     try {
       const packageJson = JSON.parse(content);
-      let summary = '📦 package.json\n';
+      let summary = `📦 ${filePath}\n`;
 
       if (packageJson.name) {
         summary += `  Name: ${packageJson.name}\n`;
@@ -205,17 +266,17 @@ class ContextService {
 
       return summary.trimEnd();
     } catch {
-      return `📦 package.json (raw):\n${content}`.trimEnd();
+      return `📦 ${filePath} (raw):\n${content}`.trimEnd();
     }
   }
 
   /**
    * Provide compact summary for composer.json dependencies
    */
-  renderComposerPackageSection(content) {
+  renderComposerPackageSection(content, filePath = 'composer.json') {
     try {
       const composerJson = JSON.parse(content);
-      let summary = '📦 composer.json\n';
+      let summary = `📦 ${filePath}\n`;
 
       if (composerJson.name) {
         summary += `  Name: ${composerJson.name}\n`;
@@ -230,7 +291,7 @@ class ContextService {
 
       return summary.trimEnd();
     } catch {
-      return `📦 composer.json (raw):\n${content}`.trimEnd();
+      return `📦 ${filePath} (raw):\n${content}`.trimEnd();
     }
   }
 
