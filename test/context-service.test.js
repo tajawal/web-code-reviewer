@@ -81,6 +81,10 @@ describe('ContextService', () => {
       });
 
       execSync.mockImplementation(command => {
+        // Mock git ls-files to return single package.json
+        if (command.includes('git ls-files') && command.includes('package.json')) {
+          return 'package.json';
+        }
         if (command.includes(packageJsonConfig.file)) {
           return mockPackageJson;
         }
@@ -117,6 +121,10 @@ describe('ContextService', () => {
       const packageJsonConfig = jsDependencyFiles[0];
 
       execSync.mockImplementation(command => {
+        // Mock git ls-files to return single package.json
+        if (command.includes('git ls-files') && command.includes('package.json')) {
+          return 'package.json';
+        }
         if (command.includes(packageJsonConfig.file)) {
           return 'invalid json';
         }
@@ -163,6 +171,10 @@ describe('ContextService', () => {
       const packageJsonConfig = jsDependencyFiles[0];
 
       execSync.mockImplementation(command => {
+        // Mock git ls-files to return single package.json
+        if (command.includes('git ls-files') && command.includes('package.json')) {
+          return 'package.json';
+        }
         if (command.includes(packageJsonConfig.file)) {
           return mockPackageJson;
         }
@@ -174,6 +186,66 @@ describe('ContextService', () => {
       expect(result).toContain('Falling back to js');
       expect(result).toContain('📦 package.json');
       expect(result).toContain('express: ^4.18.2');
+    });
+
+    it('should detect and aggregate dependencies from multiple package.json files in monorepo', async () => {
+      const mockRootPackageJson = JSON.stringify({
+        name: 'monorepo-root',
+        version: '1.0.0',
+        dependencies: {
+          react: '^18.0.0'
+        }
+      });
+
+      const mockAppPackageJson = JSON.stringify({
+        name: '@monorepo/app',
+        version: '1.0.0',
+        dependencies: {
+          'react-dom': '^18.0.0'
+        }
+      });
+
+      const mockLibPackageJson = JSON.stringify({
+        name: '@monorepo/lib',
+        version: '1.0.0',
+        dependencies: {
+          lodash: '^4.17.21'
+        }
+      });
+
+      execSync.mockImplementation(command => {
+        // Mock git ls-files to return multiple package.json files
+        if (command.includes('git ls-files') && command.includes('package.json')) {
+          return 'package.json\napps/app/package.json\npackages/lib/package.json';
+        }
+
+        // Mock reading individual package.json files
+        if (command.includes("'package.json'")) {
+          return mockRootPackageJson;
+        }
+        if (command.includes("'apps/app/package.json'")) {
+          return mockAppPackageJson;
+        }
+        if (command.includes("'packages/lib/package.json'")) {
+          return mockLibPackageJson;
+        }
+
+        return '';
+      });
+
+      const result = await contextService.getDependencyContext();
+
+      expect(result).toContain('--- Dependencies Context ---');
+      expect(result).toContain('Monorepo detected (3 package.json files)');
+      expect(result).toContain('📦 package.json');
+      expect(result).toContain('📦 apps/app/package.json');
+      expect(result).toContain('📦 packages/lib/package.json');
+      expect(result).toContain('monorepo-root');
+      expect(result).toContain('@monorepo/app');
+      expect(result).toContain('@monorepo/lib');
+      expect(result).toContain('- react: ^18.0.0');
+      expect(result).toContain('- react-dom: ^18.0.0');
+      expect(result).toContain('- lodash: ^4.17.21');
     });
   });
 
