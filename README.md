@@ -57,11 +57,17 @@ DeepReview provides comprehensive, **semantically-rich** context to the LLM usin
   - Method signatures and visibility modifiers
   - Class hierarchies and inheritance patterns
   - Extracted via language-specific parsers (not regex!)
-- **📦 Dependencies**: Package.json, lock files, and project type
+- **📦 Dependencies**: Package.json, composer.json across monorepos
 - **🏗️ File Relationships** (AST-powered):
   - Import/export statements and dependencies
   - Module structure and patterns
   - Security-sensitive imports flagged (e.g., `child_process`, `eval`)
+- **📄 Imported Files Context** (NEW):
+  - AST analysis of imported files (not just changed files)
+  - Function signatures and exports from dependencies
+  - Understands what imported functions do without opening them
+  - Resolves relative imports (./validators, ../models/user)
+  - Works across JS/TS, Python, PHP, Java
 - **📊 Recent Commits**: Recent commit history for change context
 
 ### AST Analysis by Language
@@ -91,7 +97,35 @@ DeepReview provides comprehensive, **semantically-rich** context to the LLM usin
 - ✅ Identifies security issues by understanding code flow
 - ✅ Context-aware recommendations
 
-**Example**: The LLM can now detect that `getImports()`, `getExports()`, and `getDefinitions()` all call `parseAST()` independently by analyzing the semantic structure - enabling performance optimization suggestions.
+**Example 1 - Cross-file Analysis**: The LLM can now detect that `getImports()`, `getExports()`, and `getDefinitions()` all call `parseAST()` independently by analyzing the semantic structure - enabling performance optimization suggestions.
+
+**Example 2 - Imported Files Context**:
+
+When you change a file that imports from other modules:
+
+```javascript
+// Changed file: user-controller.js
+import { validateUser } from './validators';
+
+function createUser(data) {
+  validateUser(data); // What does this do? What parameters?
+}
+```
+
+The LLM automatically receives the AST of `validators.js`:
+
+```text
+📄 validators.js (imported, not changed):
+  📝 Function: validateUser(data) [line 5]
+      - Throws: ValidationError
+      - Checks: email, password strength
+```
+
+Now the LLM knows exactly what `validateUser()` does, enabling it to:
+
+- Validate correct parameter usage
+- Detect missing error handling
+- Suggest improvements based on the actual implementation
 
 ### Smart Management
 

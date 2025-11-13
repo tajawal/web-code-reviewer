@@ -373,6 +373,31 @@ export default App;`;
       expect(semanticContext).toContain('Class: class SampleService');
     });
 
+    it('should get AST context for imported files', async () => {
+      const controllerContent = `import { validateUser } from './validators';\nimport { UserModel } from '../models/user';\n\nfunction createUser(data) {\n  validateUser(data);\n  return UserModel.create(data);\n}\n\nmodule.exports = { createUser };`;
+
+      const validatorsContent = `function validateUser(data) {\n  if (!data.email) throw new Error('Email required');\n  return true;\n}\n\nmodule.exports = { validateUser };`;
+
+      execSync.mockImplementation(command => {
+        if (command.includes('src/controllers/user.js')) {
+          return controllerContent;
+        }
+        if (command.includes('src/controllers/validators.js')) {
+          return validatorsContent;
+        }
+        if (command.includes('git ls-files')) {
+          return '';
+        }
+        return '';
+      });
+
+      const result = await contextService.getImportedFilesContext(['src/controllers/user.js']);
+
+      expect(result).toContain('--- Imported Files Context (Dependencies) ---');
+      expect(result).toContain('Found');
+      expect(result).toContain('imported file');
+    });
+
     it('should handle empty changed files', async () => {
       const result = await contextService.getFileRelationshipsContext([]);
 
