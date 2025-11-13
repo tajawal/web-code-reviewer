@@ -1,8 +1,110 @@
 /**
+ * Context Reference Instruction - How to use imported files context
+ */
+const CONTEXT_REFERENCE_INSTRUCTION = `
+📋 **How to Use Imported Files Context**:
+
+When you see a section like:
+"""
+📄 validators.js (imported, not changed):
+  Referenced by: user-controller.js
+  📝 Exports/Definitions:
+    Function: validateUser(data) [line 5]
+"""
+
+Before flagging issues in user-controller.js that call validateUser():
+1. Read the function signature from imported context
+2. Verify your concern isn't already addressed in the definition
+3. Adjust severity accordingly
+
+**Example**:
+❌ DON'T: "validateUser() called without error handling → CRITICAL"
+✅ DO: Check if validateUser definition shows: function validateUser(data) { try { ... } }
+       → If yes: Omit or mark SUGGESTION
+       → If no: Mark CRITICAL with confidence
+`;
+
+/**
+ * Severity Validation Framework - Applied to ALL languages
+ * This framework helps prevent false positives by leveraging imported files context
+ */
+const SEVERITY_VALIDATION_FRAMEWORK = `
+${CONTEXT_REFERENCE_INSTRUCTION}
+
+📋 **CRITICAL: Using Imported Files Context to Prevent False Positives**
+
+Before marking any issue as CRITICAL, you MUST verify against the "Imported Files Context (Dependencies)" section provided in the prompt.
+
+**Decision Tree for Severity Assignment**:
+1. Check if the imported files context shows the concern is already handled → Mark as SUGGESTION or omit entirely
+2. If imported context is ambiguous or incomplete → Mark as MEDIUM (never CRITICAL)
+3. Only mark CRITICAL if imported context confirms the issue definitively exists
+
+**What to Check in Imported Files Context**:
+
+1. **Function Signature Issues**:
+   - Check imported file "Exports/Definitions" for:
+     • Optional parameters (?, default values, nullable types)
+     • Overloaded signatures
+     • Actual parameter names and types
+   - Example: If function shows "validateUser(data, options = {})", the options param is optional → Don't flag missing argument as CRITICAL
+
+2. **Missing Error Handling**:
+   - Check imported function definitions for:
+     • Internal try-catch blocks
+     • Error return types (Result<T, E>, Option<T>, throws declarations)
+     • Documented error handling behavior
+   - Example: If function definition shows internal try-catch → Don't flag caller as missing error handling
+
+3. **Type/Null Safety**:
+   - Check imported definitions for:
+     • Return type annotations (string | null, Optional<T>, nullable types)
+     • Null-safety patterns (optional chaining, null coalescing)
+     • Type guards and narrowing
+   - Example: If return type is "string | null" → Don't flag null checks as unnecessary
+
+4. **Validation/Sanitization**:
+   - Check imported functions for:
+     • Internal validation logic
+     • Auto-sanitization (ORM escaping, template auto-escaping)
+     • Security library usage
+   - Example: If ORM method uses prepared statements → Don't flag SQL injection as CRITICAL
+
+5. **API Contract Violations**:
+   - Check imported interfaces/classes/components for:
+     • Actual property/method/prop definitions
+     • Required vs optional fields
+     • Component prop types and destructuring patterns
+   - Example: If React component definition shows "({ open, onClose }: Props)" and caller passes extra prop "setVisible" → This is NOT CRITICAL (React ignores extra props silently)
+
+**Common False Positive Patterns to Avoid**:
+
+- **React Props**: Passing extra props that aren't in component signature → SUGGESTION (not CRITICAL), React ignores extra props
+- **Optional Parameters**: Not passing optional params shown with ? or default values → Not an issue
+- **Internal Validation**: Calling function that internally validates/sanitizes → Don't flag missing validation at call site
+- **Null Returns**: Not checking for null when return type shows non-nullable → Only flag if return type is actually nullable
+- **Error Handling**: Not wrapping calls in try-catch when imported function handles errors internally → Don't flag as CRITICAL
+
+**Confidence Adjustment**:
+- If imported context clearly resolves the concern → confidence = 0.9, severity = suggestion or omit
+- If imported context is present but ambiguous → confidence ≤ 0.6, severity ≤ medium
+- If no imported context available → confidence ≤ 0.5, be conservative with CRITICAL severity
+`;
+
+/**
  * QA Automation specific checks
  */
 const QA_SPECIFIC_CHECKS = {
-  qa_web: `Cypress Web Automation Checks (only if visible in diff; do not assume unseen code)
+  qa_web: `
+${SEVERITY_VALIDATION_FRAMEWORK}
+
+QA Web Automation-Specific Validation Rules:
+- **Missing Helper Functions**: Check imported customHelpers files for existing utilities → Don't flag as missing if helper exists.
+- **Localized Strings**: Check imported localizedStrings fixtures → Don't flag hardcoded strings if localized version exists.
+- **Action Methods**: If imported CC (Custom Commands) file has the action method → Don't flag as missing abstraction.
+- **Wait Strategies**: If imported helper uses cy.intercept() or proper wait patterns → Don't flag as improper wait.
+
+Cypress Web Automation Checks (only if visible in diff; do not assume unseen code)
 
 Suggestions (internal qa-frontend-cypress architectural best practices):
 - Action/utility methods in spec.js files → Anchor: action methods, utility functions, or reusable logic blocks in spec.js. Fix: consider moving to CC files and importing, keep spec.js for test scenarios only.
@@ -18,7 +120,15 @@ Suggestions (general cypress/web automation best practices):
 
 Note: Use post-patch line numbers for precise anchoring.`,
 
-  qa_android: `Appium Android Automation Checks (only if visible in diff; do not assume unseen code)
+  qa_android: `
+${SEVERITY_VALIDATION_FRAMEWORK}
+
+QA Android Automation-Specific Validation Rules:
+- **Utility Classes**: Check imported utility classes (MobileGesturesUtil, WebDriverWaitUtils) for existing methods → Don't flag as missing if utility exists.
+- **Constants**: Check imported CV (Constants) classes for test data → Don't flag hardcoded values if constant exists.
+- **Locator Strategy**: If imported screen/page class uses optimal locators → Don't flag suboptimal locators in new code that follows same pattern.
+
+Appium Android Automation Checks (only if visible in diff; do not assume unseen code)
 
 Suggestions (internal qa-android architectural best practices):
 - Manual gesture implementation when utility exists → Anchor: custom swipe/scroll code when MobileGesturesUtil is available. Fix: use MobileGesturesUtil.swipeLeftOnElement(), scrollToElement() methods.
@@ -31,7 +141,16 @@ Suggestions (general appium/android automation best practices):
 
 Note: Use post-patch line numbers for precise anchoring.`,
 
-  qa_backend: `RestAssured API Testing Checks (only if visible in diff; do not assume unseen code)
+  qa_backend: `
+${SEVERITY_VALIDATION_FRAMEWORK}
+
+QA Backend Automation-Specific Validation Rules:
+- **Activator/Service Pattern**: Check imported activators or services packages → Don't flag direct RestAssured calls if proper abstraction exists.
+- **Test Data Patterns**: Check imported TestDataProviders, validDataFaker, or Constants → Don't flag hardcoded data if data generation pattern exists.
+- **Database Abstraction**: Check imported connector/repository classes → Don't flag missing abstraction if proper database layer exists.
+- **Helper Methods**: If imported helper/utility class has complex scenario logic → Don't flag as missing if proper abstraction exists.
+
+RestAssured API Testing Checks (only if visible in diff; do not assume unseen code)
 
 Suggestions (internal qa-backend architectural best practices):
 - Not using Activator/Service pattern → Anchor: direct RestAssured calls in test methods or repeated API logic. Fix: extract to Activator/Service classes in activators or services package.
@@ -55,6 +174,14 @@ Note: Use post-patch line numbers for precise anchoring.`
 
 const LANGUAGE_SPECIFIC_CHECKS = {
   js: `
+${SEVERITY_VALIDATION_FRAMEWORK}
+
+JavaScript/TypeScript-Specific Validation Rules:
+- **Unused React Props**: If imported component definition shows prop NOT in destructuring pattern or PropTypes → Mark as SUGGESTION (not CRITICAL). React ignores extra props silently - this is NOT a runtime error.
+- **Missing PropTypes/Types**: If imported context shows TypeScript interface or JSDoc types → Not an issue.
+- **Optional Callback Props**: If imported component signature shows prop with ?: or default value → Don't flag missing as error.
+- **Hook Dependencies**: If imported hook definition shows it's stable (useCallback/useMemo) → Don't flag as unstable.
+- **Error Handling**: If imported function shows internal try-catch or error boundaries → Don't require caller to wrap in try-catch.
 
 JavaScript/TypeScript Checks (only if visible in diff; do not assume unseen code)
 React:
@@ -105,7 +232,16 @@ Accessibility:
 Note: Use post-patch line numbers. If only diff hunk is known or source is uncertain, set evidence_strength ≤ 2 and confidence ≤ 0.5, and prefix fix_code_patch with "// approximate".
 `,
 
-  python: `Python-Specific Checks (apply only if visible in the diff; do not assume unseen code). 
+  python: `
+${SEVERITY_VALIDATION_FRAMEWORK}
+
+Python-Specific Validation Rules:
+- **Missing try-except**: Check imported function for @safe decorator, internal error handling, documented exceptions, or context managers → Don't flag as CRITICAL if handled internally.
+- **Type Hints & None**: If imported stub (.pyi) or function signature shows Optional[T] or Union[T, None] → Don't flag None checks as missing.
+- **Context Managers**: If imported class has __enter__/__exit__ or is used with contextlib → Don't flag resource cleanup.
+- **Validation**: If imported function performs internal validation (raises ValueError, uses pydantic) → Don't require validation at call site.
+
+Python-Specific Checks (apply only if visible in the diff; do not assume unseen code).
 
 Performance:
 - Whole-dataset loads: pandas/json/db result sets fully materialized where streaming/chunking is feasible. Default evidence=3, confidence=0.7.
@@ -140,8 +276,18 @@ Web (Django/Flask/FastAPI):
 Note: Use post-patch line numbers. If only diff hunk is known or source is uncertain, set evidence_strength ≤ 2 and confidence ≤ 0.5, and prefix fix_code_patch with "// approximate".
 `,
 
-  java: `Java Language-Specific Checks (apply only if visible in the diff; do not assume unseen code). 
-  
+  java: `
+${SEVERITY_VALIDATION_FRAMEWORK}
+
+Java-Specific Validation Rules:
+- **Null Safety**: Check imported method signature for @Nullable/@NonNull/@NotNull annotations → Only flag if annotation confirms nullable.
+- **Exception Handling**: If imported method signature declares checked exceptions (throws) → Verify handling; if NOT declared → Don't require try-catch.
+- **Resource Management**: If imported class implements AutoCloseable or Closeable → Expect try-with-resources; otherwise don't flag.
+- **Validation**: If imported method has Bean Validation annotations (@Valid, @NotNull, @Size) → Don't require additional validation at call site.
+- **Optional Returns**: If imported method returns Optional<T> → Don't flag .get() as unsafe if .isPresent() check exists.
+
+Java Language-Specific Checks (apply only if visible in the diff; do not assume unseen code).
+
 Performance:
 - N+1 queries / queries in loops. Anchor loop + query. Default 4,0.8.
 - Reflection/annotation scanning in hot paths. Anchor: getClass().getMethod()/reflection calls. Default 4,0.8.
@@ -175,7 +321,17 @@ Web (Spring/Jakarta):
 Note: Use post-patch line numbers. If only diff hunk is known or source is uncertain, set evidence_strength ≤ 2 and confidence ≤ 0.5, and prefix fix_code_patch with "// approximate".
 `,
 
-  php: `PHP Language-Specific Checks
+  php: `
+${SEVERITY_VALIDATION_FRAMEWORK}
+
+PHP-Specific Validation Rules:
+- **SQL Injection**: If imported ORM/query builder method uses prepared statements or parameter binding → Don't flag as CRITICAL.
+- **Type Declarations**: If imported function has strict_types=1 and typed parameters/returns → Use those for validation, don't flag missing types.
+- **Null Coalescing**: If imported function return type is nullable (?Type or Type|null) → null checks are expected, not missing.
+- **Validation**: If imported function uses Laravel Validator, FormRequest, or manual validation → Don't require validation at call site.
+- **XSS**: If imported template engine has auto-escaping (Blade {{ }}, Twig {{ }}) → Don't flag as XSS unless using raw output.
+
+PHP Language-Specific Checks
 
 Performance:
 - N+1: queries in loops. Anchor loop + query. Default 4,0.8.
@@ -212,7 +368,17 @@ Modern PHP Security:
 
 Note: Use post-patch line numbers. If only diff hunk is known or source is uncertain, set evidence_strength ≤ 2 and confidence ≤ 0.5, and prefix fix_code_patch with "// approximate".`,
 
-  swift: `Swift Checks (only if visible in the diff; do not assume unseen code)
+  swift: `
+${SEVERITY_VALIDATION_FRAMEWORK}
+
+Swift-Specific Validation Rules:
+- **Force Unwraps**: If imported property/method signature shows non-optional type (no ?) → Force unwrap may be safe; if shows optional (?) → Flag force unwrap as risky.
+- **Optional Returns**: If imported function returns Optional<T> or T? → Require nil checks or optional chaining; if returns non-optional T → Don't flag.
+- **Error Handling**: If imported function signature shows 'throws' → Require try/catch; if doesn't throw → Don't require error handling.
+- **MainActor**: If imported class/method has @MainActor annotation → UI updates are safe; otherwise verify dispatch to main.
+- **Memory Management**: If imported closure or Task properly uses [weak self] or @MainActor → Don't flag retain cycles.
+
+Swift Checks (only if visible in the diff; do not assume unseen code)
 
 Performance:
 - Heavy synchronous work on the main actor (e.g., Data(contentsOf:), JSONDecoder.decode, CoreData fetch) triggered from view/body lifecycle. Anchor call + surrounding context. Default 4,0.8.
