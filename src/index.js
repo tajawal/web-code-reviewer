@@ -14,7 +14,7 @@ const LoggingService = require('./services/logging-service');
 
 // Version information - updated during build process
 const VERSION_INFO = {
-  version: '1.14.31',
+  version: '1.14.38',
   name: 'web-code-reviewer',
   description: 'Automated code review using LLM (Claude/OpenAI) for GitHub PRs'
 };
@@ -58,8 +58,8 @@ class GitHubActionsReviewer {
     // Set API key environment variables
     this.inputService.setApiKeyEnvironment(this.inputs);
 
-    // Initialize GitHub context
-    this.octokit = github.getOctokit(process.env.GITHUB_TOKEN);
+    // Initialize GitHub context (optional for local testing)
+    this.octokit = process.env.GITHUB_TOKEN ? github.getOctokit(process.env.GITHUB_TOKEN) : null;
     this.context = github.context;
 
     // Initialize GitHub service

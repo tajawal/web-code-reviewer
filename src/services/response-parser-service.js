@@ -37,8 +37,9 @@ class ResponseParserService {
 
       // Extract summary from <SUMMARY> tags (prioritize this over JSON summary field)
       const summaryMatches = llmResponse.match(/<SUMMARY>\s*([\s\S]*?)\s*<\/SUMMARY>/g) || [];
+      const hasSummaryTags = summaryMatches.length > 0;
 
-      if (summaryMatches.length > 0) {
+      if (hasSummaryTags) {
         summaryMatches.forEach((match, index) => {
           const summaryContent = match
             .replace(/<SUMMARY>\s*/, '')
@@ -60,8 +61,9 @@ class ResponseParserService {
             const validatedChunk = this.validateChunkData(reviewData, index + 1);
             chunkResults.push(validatedChunk);
 
-            // Only use JSON summary if no <SUMMARY> tags were found
-            if (validatedChunk.summary && summaryMatches.length === 0) {
+            // Only use JSON summary if no <SUMMARY> tags were found in entire response
+            // Use stored flag to avoid checking length inside loop
+            if (validatedChunk.summary && !hasSummaryTags) {
               summaries.push(`**Chunk ${index + 1}**: ${validatedChunk.summary}`);
             }
 
@@ -199,19 +201,25 @@ class ResponseParserService {
           existingIssue.chunks.push(issue.chunk);
         }
 
-        // CHANGED: Use AVERAGE instead of MAX for determinism
-        // Taking average prevents flipping from suggestion to critical based on one chunk's higher score
-        // Example: Chunk A (score=3.4, confidence=0.6) + Chunk B (score=3.7, confidence=0.8)
-        // Old (MAX): Would take 3.7/0.8 → might escalate to critical
-        // New (AVG): Would take 3.55/0.7 → stays suggestion
-        const existingConfidence = existingIssue.confidence || 0;
-        const existingScore = existingIssue.severity_score || 0;
+        // Track all values for proper averaging
+        // FIXED: Use array to collect all values, compute average at end
+        // Running average formula (a+b)/2 then (result+c)/2 is mathematically incorrect
+        existingIssue.confidenceValues = existingIssue.confidenceValues || [
+          existingIssue.confidence
+        ];
+        existingIssue.confidenceValues.push(issue.confidence);
 
-        // Average confidence (more stable)
-        existingIssue.confidence = (existingConfidence + issue.confidence) / 2;
+        existingIssue.scoreValues = existingIssue.scoreValues || [existingIssue.severity_score];
+        existingIssue.scoreValues.push(issue.severity_score);
 
-        // Average severity score (prevents classification flipping)
-        existingIssue.severity_score = (existingScore + issue.severity_score) / 2;
+        // Compute true average from all collected values
+        existingIssue.confidence =
+          existingIssue.confidenceValues.reduce((sum, val) => sum + val, 0) /
+          existingIssue.confidenceValues.length;
+
+        existingIssue.severity_score =
+          existingIssue.scoreValues.reduce((sum, val) => sum + val, 0) /
+          existingIssue.scoreValues.length;
       } else {
         // New issue, add to map and result
         const newIssue = {

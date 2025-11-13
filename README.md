@@ -5,12 +5,13 @@ A GitHub Action that performs automated code reviews using Large Language Models
 ## ✨ Features
 
 - **🌍 Multi-Language Support**: Specialized review prompts for JavaScript/TypeScript, Python, Java, PHP, Swift, and QA Automation (Cypress, Appium, RestAssured)
+- **🧠 AST-Powered Analysis**: Deep semantic code understanding using Abstract Syntax Trees for JavaScript, Python, PHP, and Java
 - **📊 Structured JSON Output**: Detailed analysis with severity scoring, risk factors, and confidence levels
 - **🔍 Smart File Filtering**: Language-specific file detection and filtering
 - **🤖 LLM Integration**: Supports both Claude Sonnet 4.5 and OpenAI GPT-4o with unified system prompts
 - **🎯 Intelligent Merge Decisions**: Automatic merge blocking based on critical issues with confidence scoring
 - **📝 Enhanced PR Comments**: Rich, categorized review results with severity indicators
-- **⚡ Optimized Processing**: Intelligent chunking and rate limiting for large codebases
+- **⚡ Optimized Processing**: Intelligent chunking and rate limiting for large codebases (sub-second context generation)
 - **🔧 Configurable**: Customizable paths, tokens, temperature, and language settings
 - **📈 External Logging**: Non-blocking analytics logging to external endpoints for monitoring and insights
 - **🏗️ Modular Architecture**: Centralized JSON parsing and reusable components for maintainability
@@ -44,22 +45,62 @@ DeepReview is engineered for **world-class determinism** - identical code produc
 
 See [DETERMINISM_IMPROVEMENTS.md](./DETERMINISM_IMPROVEMENTS.md) for technical details.
 
-## 🧠 LLM Context
+## 🧠 LLM Context - AST-Powered Intelligence
 
-DeepReview provides comprehensive, consistently-sized context to the LLM:
+DeepReview provides comprehensive, **semantically-rich** context to the LLM using Abstract Syntax Tree (AST) analysis:
 
-- **📝 Changed Files**: Full diff content with syntax highlighting
-- **🔍 Semantic Code**: Key code patterns, function signatures, and critical logic from changed files
+### Context Components
+
+- **📝 Changed Files**: Full diff content with deletion markers
+- **🔍 Semantic Code** (AST-powered):
+  - Function/class definitions with **precise line numbers**
+  - Method signatures and visibility modifiers
+  - Class hierarchies and inheritance patterns
+  - Extracted via language-specific parsers (not regex!)
 - **📦 Dependencies**: Package.json, lock files, and project type
-- **🏗️ File Relationships**: Import/export patterns and project structure
-- **📊 Recent Commits**: Last 5 commits for pattern understanding
+- **🏗️ File Relationships** (AST-powered):
+  - Import/export statements and dependencies
+  - Module structure and patterns
+  - Security-sensitive imports flagged (e.g., `child_process`, `eval`)
+- **📊 Recent Commits**: Recent commit history for change context
 
-**Smart Management**:
+### AST Analysis by Language
 
-- **Fixed Context Size**: Always 100KB for deterministic reviews
+| Language | Parser | Capabilities |
+|----------|--------|--------------|
+| **JavaScript/TypeScript** | `@babel/parser` + `@babel/traverse` | Functions, classes, imports, exports, unreachable code detection |
+| **Python** | Native `ast` module (via child_process) | Functions, classes, imports, async patterns, unreachable code |
+| **PHP** | `php-parser` | Classes, methods, inheritance, use statements, unreachable code |
+| **Java** | `java-ast` (antlr4ts) | Packages, classes, interfaces, methods, visibility, inheritance |
+| **Swift** | Regex-based | Basic patterns (AST planned) |
+
+### Why AST Matters
+
+**Before (Regex-only)**:
+
+- ❌ Surface-level pattern matching
+- ❌ Limited semantic understanding
+- ❌ Approximate line numbers
+- ❌ Missed architectural issues
+
+**After (AST-powered)**:
+
+- ✅ Deep semantic analysis
+- ✅ Precise line number references
+- ✅ Detects architectural patterns (e.g., redundant parsing across files)
+- ✅ Identifies security issues by understanding code flow
+- ✅ Context-aware recommendations
+
+**Example**: The LLM can now detect that `getImports()`, `getExports()`, and `getDefinitions()` all call `parseAST()` independently by analyzing the semantic structure - enabling performance optimization suggestions.
+
+### Smart Management
+
+- **Context Size**: Typically 4-5KB (compact yet powerful)
+- **Performance**: Sub-second generation (313ms average)
 - **Relevance Filtering**: Focuses on most important patterns
 - **Deterministic Ordering**: Files and imports sorted for consistency
 - **Token Optimization**: Precise estimation prevents overflow
+- **Graceful Fallback**: Falls back to regex if AST parsing fails
 
 ## 🚀 Quick Start
 
@@ -258,6 +299,12 @@ jobs:
 ### JavaScript/TypeScript (`js`)
 
 - **File Extensions**: `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`
+- **AST Parser**: `@babel/parser` + `@babel/traverse`
+- **AST Capabilities**:
+  - Function and class extraction with line numbers
+  - Import/export analysis
+  - Unreachable code detection (after return/throw)
+  - Method signature analysis
 - **Focus Areas**:
   - React hooks and component patterns (unstable deps, heavy render, missing cleanup)
   - TypeScript type safety (any/unknown leakage, unsafe narrowing)
@@ -271,6 +318,13 @@ jobs:
 ### Python (`python`)
 
 - **File Extensions**: `.py`, `.pyw`, `.pyx`, `.pyi`
+- **AST Parser**: Native Python `ast` module (via Node.js child_process)
+- **AST Capabilities**:
+  - Function/class definitions with parameters and line numbers
+  - Async function detection
+  - Import analysis (import/from statements)
+  - Unreachable code detection (after return/raise/break/continue)
+  - Method extraction from classes
 - **Focus Areas**:
   - SQL injection prevention (critical: direct taint in f-strings)
   - Command injection vulnerabilities (subprocess with shell=True)
@@ -283,6 +337,13 @@ jobs:
 ### Java (`java`)
 
 - **File Extensions**: `.java`
+- **AST Parser**: `java-ast` (ANTLR4-based, CommonJS-compatible)
+- **AST Capabilities**:
+  - Package and import declarations (including static imports)
+  - Class and interface definitions with line numbers
+  - Method extraction with visibility modifiers (public/private/protected)
+  - Class inheritance and extension detection
+  - Static method detection
 - **Focus Areas**:
   - SQL injection (PreparedStatement vs string concatenation)
   - SOLID principles
@@ -296,6 +357,14 @@ jobs:
 ### PHP (`php`)
 
 - **File Extensions**: `.php`
+- **AST Parser**: `php-parser` (pure JavaScript PHP parser)
+- **AST Capabilities**:
+  - Class definitions with inheritance (extends)
+  - Method extraction with visibility and static detection
+  - Function definitions with line numbers
+  - Use statement analysis (imports)
+  - Include/require detection
+  - Unreachable code detection (after return/throw)
 - **Focus Areas**:
   - Web security vulnerabilities (SQL injection, XSS, file inclusion)
   - Database security (prepared statements)

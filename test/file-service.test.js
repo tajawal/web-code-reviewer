@@ -193,7 +193,7 @@ src/file(with)parentheses.js`;
       expect(result).toContain('--- File: src/index.js ---');
       expect(result).toContain('+new line');
       expect(execSync).toHaveBeenCalledWith(
-        'git diff --name-only origin/main...HEAD',
+        'git diff --name-only --diff-filter=AMRC origin/main...HEAD',
         { encoding: 'utf8' }
       );
     });
@@ -223,7 +223,7 @@ src/file(with)parentheses.js`;
       service.getFullDiff();
 
       expect(execSync).toHaveBeenCalledWith(
-        'git diff --name-only origin/develop...HEAD',
+        'git diff --name-only --diff-filter=AMRC origin/develop...HEAD',
         { encoding: 'utf8' }
       );
     });
@@ -235,7 +235,7 @@ src/file(with)parentheses.js`;
       service.getFullDiff();
 
       expect(execSync).toHaveBeenCalledWith(
-        'git diff --name-only origin/main...HEAD',
+        'git diff --name-only --diff-filter=AMRC origin/main...HEAD',
         { encoding: 'utf8' }
       );
     });

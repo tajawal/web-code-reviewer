@@ -26,9 +26,14 @@ class FileService {
         `🔤 Language filter: ${this.language} (${CONFIG.LANGUAGE_CONFIGS[this.language]?.name || 'Unknown'})`
       );
 
-      const rawOutput = execSync(`git diff --name-only origin/${this.baseBranch}...HEAD`, {
-        encoding: 'utf8'
-      });
+      // Use --diff-filter to exclude deleted files (D = deleted)
+      // A = Added, M = Modified, R = Renamed, C = Copied
+      const rawOutput = execSync(
+        `git diff --name-only --diff-filter=AMRC origin/${this.baseBranch}...HEAD`,
+        {
+          encoding: 'utf8'
+        }
+      );
       const allFiles = rawOutput
         .split('\n')
         .filter(Boolean) // Remove empty lines
@@ -37,7 +42,10 @@ class FileService {
           const matchesPath = this.pathToFiles.some(path => file.startsWith(path));
 
           // Check if file should be ignored using ignore patterns from input or default
-          const shouldIgnore = this.ignorePatterns.some(pattern => file.endsWith(pattern));
+          // Support both file suffixes (.json, .md) and directory paths (node_modules, dist)
+          const shouldIgnore = this.ignorePatterns.some(
+            pattern => file.endsWith(pattern) || file.includes(`${pattern}/`)
+          );
 
           // Check if file matches the specified language
           const matchesLanguage = this.matchesLanguage(file);
@@ -72,13 +80,16 @@ class FileService {
    */
   getFileDiff(filePath) {
     try {
+      // Normalize path for git (git always uses forward slashes, even on Windows)
+      const normalizedPath = filePath.replace(/\\/g, '/');
+
       // Enhanced diff with more context lines and file structure
       // Using unified=10 for optimal balance between context and performance
-      const diffCommand = `git diff origin/${this.baseBranch}...HEAD --unified=10 --no-prefix --ignore-blank-lines --ignore-space-at-eol --no-color -- "${filePath}"`;
+      const diffCommand = `git diff origin/${this.baseBranch}...HEAD --unified=10 --no-prefix --ignore-blank-lines --ignore-space-at-eol --no-color -- "${normalizedPath}"`;
       const diff = execSync(diffCommand, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }); // 10MB buffer
 
       // Add file structure context
-      const fileStructure = this.getFileStructureContext(filePath);
+      const fileStructure = this.getFileStructureContext(normalizedPath);
       const formattedDiff = this.formatDeletionBlocks(diff, filePath);
 
       return `${fileStructure}\n${formattedDiff}`;
