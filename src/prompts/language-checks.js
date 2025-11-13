@@ -89,6 +89,18 @@ Before marking any issue as CRITICAL, you MUST verify against the "Imported File
 - If imported context clearly resolves the concern → confidence = 0.9, severity = suggestion or omit
 - If imported context is present but ambiguous → confidence ≤ 0.6, severity ≤ medium
 - If no imported context available → confidence ≤ 0.5, be conservative with CRITICAL severity
+
+**Issue Deduplication**:
+- Before creating a new issue, check if you already reported the same root cause in a different file
+- If the same problem affects multiple files, create ONE issue with multiple occurrences
+- Example: Prop removed from interface (FileA) but still used in call (FileB) → ONE issue with TWO occurrences
+- Use the "occurrences" array to list all affected locations:
+  [{file: "FileA.tsx", lines: [10]}, {file: "FileB.tsx", lines: [20]}]
+- Common patterns requiring deduplication:
+  • Prop/parameter removed from signature but still passed/used elsewhere
+  • Function renamed in definition but old name still used in callers
+  • Type changed in interface but incompatible usage in implementations
+  • Import path changed but old path still referenced
 `;
 
 /**
