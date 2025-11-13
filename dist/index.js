@@ -90815,6 +90815,208 @@ class ContextService {
   }
 
   /**
+   * Resolve import path to actual file path
+   */
+  resolveImportPath(importPath, fromFile) {
+    try {
+      // Skip node_modules and external packages
+      if (!importPath.startsWith('.') && !importPath.startsWith('/')) {
+        return null;
+      }
+
+      const path = __nccwpck_require__(16928);
+      const fromDir = path.dirname(fromFile);
+
+      // Resolve relative path
+      const resolvedPath = path.resolve(fromDir, importPath);
+
+      // Try common extensions if no extension provided
+      const extensions = ['.js', '.jsx', '.ts', '.tsx', '.py', '.php', '.java'];
+
+      // Check if file exists as-is
+      const escapedPath = this.escapeFilePath(resolvedPath);
+      const existsCheck = `if [ -f ${escapedPath} ]; then echo "exists"; fi`;
+      const exists = ShellExecutor.execute(existsCheck).trim();
+
+      if (exists) {
+        return resolvedPath;
+      }
+
+      // Try with extensions
+      for (const ext of extensions) {
+        const withExt = resolvedPath + ext;
+        const escapedWithExt = this.escapeFilePath(withExt);
+        const existsWithExt = ShellExecutor.execute(
+          `if [ -f ${escapedWithExt} ]; then echo "exists"; fi`
+        ).trim();
+        if (existsWithExt) {
+          return withExt;
+        }
+      }
+
+      // Try index files
+      const indexPaths = extensions.map(ext => path.join(resolvedPath, `index${ext}`));
+      for (const indexPath of indexPaths) {
+        const escapedIndex = this.escapeFilePath(indexPath);
+        const existsIndex = ShellExecutor.execute(
+          `if [ -f ${escapedIndex} ]; then echo "exists"; fi`
+        ).trim();
+        if (existsIndex) {
+          return indexPath;
+        }
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Extract import paths from import strings
+   */
+  parseImportPath(importString) {
+    // Parse strings like "Import: ./validators (validateUser)" or "Require: ../utils"
+    const patterns = [
+      /^Import:\s*([^\s(]+)/, // "Import: ./path"
+      /^Require:\s*([^\s(]+)/, // "Require: ./path"
+      /^Dynamic Import:\s*([^\s(]+)/, // "Dynamic Import: ./path"
+      /^from\s+([^\s]+)/, // "from module"
+      /^import\s+([^\s]+)/ // "import module"
+    ];
+
+    for (const pattern of patterns) {
+      const match = importString.match(pattern);
+      if (match) {
+        return match[1].replace(/['"]/g, ''); // Remove quotes
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Get AST context for imported files (not changed, but referenced)
+   */
+  getImportedFilesContext(changedFiles) {
+    if (!CONTEXT_CONFIG.ENABLE_FILE_RELATIONSHIPS) {
+      return '';
+    }
+
+    return this.executeWithTiming('imported_files', () => {
+      try {
+        let context = '--- Imported Files Context (Dependencies) ---\n';
+
+        if (!changedFiles || changedFiles.length === 0) {
+          context += 'No changed files to analyze.\n';
+          context += '--- End Imported Files ---\n';
+          return context;
+        }
+
+        const sortedFiles = [...changedFiles].sort((a, b) => a.localeCompare(b));
+        const importedFiles = new Set();
+        const importMap = new Map(); // Track which file imports what
+
+        // First pass: collect all imports from changed files
+        for (const file of sortedFiles) {
+          try {
+            const escapedFile = this.escapeFilePath(file);
+            const fileContent = ShellExecutor.executeWithFallback(
+              `git show HEAD:${escapedFile} 2>/dev/null`,
+              `cat ${escapedFile} 2>/dev/null`
+            );
+
+            if (!fileContent.trim()) {
+              continue;
+            }
+
+            const fileLanguage = this.detectLanguageFromPath(file);
+            const analyzer = getLanguageAnalyzer(fileLanguage);
+            const imports = analyzer.getImports(fileContent) || [];
+
+            imports.forEach(importStr => {
+              const importPath = this.parseImportPath(importStr);
+              if (importPath) {
+                const resolvedPath = this.resolveImportPath(importPath, file);
+                if (resolvedPath && !changedFiles.includes(resolvedPath)) {
+                  importedFiles.add(resolvedPath);
+                  if (!importMap.has(resolvedPath)) {
+                    importMap.set(resolvedPath, []);
+                  }
+                  importMap.get(resolvedPath).push(file);
+                }
+              }
+            });
+          } catch (error) {
+            core.warning(`⚠️ Could not analyze imports for ${file}: ${error.message}`);
+          }
+        }
+
+        if (importedFiles.size === 0) {
+          context += 'No local file imports detected (all imports are external packages).\n';
+          context += '--- End Imported Files ---\n';
+          return context;
+        }
+
+        context += `Found ${importedFiles.size} imported file(s) that are not part of the changes:\n\n`;
+
+        // Second pass: get AST for imported files (limit to prevent context explosion)
+        const sortedImports = Array.from(importedFiles).sort().slice(0, 5); // Limit to 5 files
+
+        for (const importedFile of sortedImports) {
+          try {
+            context += `📄 ${importedFile}:\n`;
+            context += `  Referenced by: ${importMap.get(importedFile).join(', ')}\n`;
+
+            const escapedFile = this.escapeFilePath(importedFile);
+            const fileContent = ShellExecutor.execute(`cat ${escapedFile} 2>/dev/null || true`);
+
+            if (!fileContent.trim()) {
+              context += '  (File not accessible)\n\n';
+              continue;
+            }
+
+            const fileLanguage = this.detectLanguageFromPath(importedFile);
+            const analyzer = getLanguageAnalyzer(fileLanguage);
+
+            // Get definitions from imported file
+            const definitions = analyzer.getDefinitions(fileContent) || [];
+            if (definitions.length > 0) {
+              context += '  📝 Exports/Definitions:\n';
+              definitions.slice(0, 5).forEach(def => {
+                context += `    ${def}\n`;
+              });
+            }
+
+            // Get exports from imported file
+            const exports = analyzer.getExports(fileContent) || [];
+            if (exports.length > 0) {
+              context += '  📤 Exports:\n';
+              exports.slice(0, 5).forEach(exp => {
+                context += `    ${exp}\n`;
+              });
+            }
+
+            context += '\n';
+          } catch (error) {
+            context += `  ⚠️ Could not analyze: ${error.message}\n\n`;
+          }
+        }
+
+        if (importedFiles.size > sortedImports.length) {
+          context += `... and ${importedFiles.size - sortedImports.length} more imported file(s) (truncated for brevity)\n\n`;
+        }
+
+        context += '--- End Imported Files ---\n';
+        return context;
+      } catch (error) {
+        core.warning(`⚠️ Could not get imported files context: ${error.message}`);
+        return '';
+      }
+    });
+  }
+
+  /**
    * Get semantic code context - analyze what functions/classes are being used and their relationships
    */
   getSemanticCodeContext(changedFiles) {
@@ -90891,6 +91093,7 @@ class ContextService {
     const contextPromises = [
       this.getSemanticCodeContext(changedFiles),
       this.getFileRelationshipsContext(changedFiles),
+      this.getImportedFilesContext(changedFiles),
       this.getDependencyContext(),
       this.getRecentCommitContext()
     ];
@@ -137041,7 +137244,7 @@ module.exports = /*#__PURE__*/JSON.parse('["AggregateError","Array","ArrayBuffer
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.38","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","test:local":"node scripts/test-local.js","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","@babel/parser":"^7.28.5","@babel/traverse":"^7.28.5","java-ast":"^0.4.1","node-fetch":"^3.3.2","php-parser":"^3.2.5"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
+module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.40","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","test:local":"node scripts/test-local.js","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","@babel/parser":"^7.28.5","@babel/traverse":"^7.28.5","java-ast":"^0.4.1","node-fetch":"^3.3.2","php-parser":"^3.2.5"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
 
 /***/ })
 
@@ -137195,7 +137398,7 @@ const LoggingService = __nccwpck_require__(68689);
 
 // Version information - updated during build process
 const VERSION_INFO = {
-  version: '1.14.38',
+  version: '1.14.40',
   name: 'web-code-reviewer',
   description: 'Automated code review using LLM (Claude/OpenAI) for GitHub PRs'
 };
