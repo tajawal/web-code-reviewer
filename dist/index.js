@@ -87812,7 +87812,8 @@ function traverseJavaAST(ast) {
 
     // Extract interface declarations
     visitInterfaceDeclaration(ctx) {
-      const interfaceName = ctx.identifier && ctx.identifier() ? ctx.identifier().text : 'Anonymous';
+      const interfaceName =
+        ctx.identifier && ctx.identifier() ? ctx.identifier().text : 'Anonymous';
 
       result.interfaces.push({
         name: interfaceName,
@@ -87852,9 +87853,8 @@ function extractMethodsFromClass(classBody, methods) {
     }
 
     const methodDecl = memberDecl.methodDeclaration();
-    const methodName = methodDecl.identifier && methodDecl.identifier()
-      ? methodDecl.identifier().text
-      : 'unknown';
+    const methodName =
+      methodDecl.identifier && methodDecl.identifier() ? methodDecl.identifier().text : 'unknown';
 
     // Determine visibility from modifiers
     let visibility = 'package';
@@ -137178,8 +137178,8 @@ class GitHubActionsReviewer {
     // Set API key environment variables
     this.inputService.setApiKeyEnvironment(this.inputs);
 
-    // Initialize GitHub context
-    this.octokit = github.getOctokit(process.env.GITHUB_TOKEN);
+    // Initialize GitHub context (optional for local testing)
+    this.octokit = process.env.GITHUB_TOKEN ? github.getOctokit(process.env.GITHUB_TOKEN) : null;
     this.context = github.context;
 
     // Initialize GitHub service

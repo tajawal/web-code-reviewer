@@ -80,16 +80,35 @@ class ReviewService {
         }
 
         // Analyze all issues based on severity and confidence
+        // Category-specific thresholds as defined in prompts
+        const CATEGORY_THRESHOLDS = {
+          security: { minScore: 3.4, minConfidence: 0.8, minEvidence: 4 },
+          performance: { minScore: 3.6, minConfidence: 0.75, minEvidence: 4 },
+          maintainability: { minScore: 4.0, minConfidence: 0.8, minEvidence: 4 },
+          best_practices: { minScore: 5.0, minConfidence: 0.9, minEvidence: 5 }
+        };
+
         if (allIssues.length > 0) {
-          const criticalIssues = allIssues.filter(
-            issue => issue.severity_proposed === 'critical' && issue.confidence >= 0.6
-          );
+          const criticalIssues = allIssues.filter(issue => {
+            if (issue.severity_proposed !== 'critical') return false;
+
+            // Get category-specific thresholds (default to performance if unknown)
+            const threshold =
+              CATEGORY_THRESHOLDS[issue.category] || CATEGORY_THRESHOLDS.performance;
+
+            // Apply category-specific validation
+            return (
+              issue.confidence >= threshold.minConfidence &&
+              issue.severity_score >= threshold.minScore &&
+              (issue.risk_factors?.evidence_strength || 0) >= threshold.minEvidence
+            );
+          });
 
           const highConfidenceCritical = criticalIssues.length;
 
           if (highConfidenceCritical > 0) {
             core.info(
-              `🚨 Found ${highConfidenceCritical} critical issues with confidence ≥ 0.6 across all chunks`
+              `🚨 Found ${highConfidenceCritical} critical issues (confidence ≥ 0.7, score ≥ 3.6, evidence ≥ 4) across all chunks`
             );
             core.info(
               `   Issues: ${criticalIssues.map(i => `${i.originalId} (${i.category}, Chunk ${i.chunk}, score: ${i.severity_score?.toFixed(1) || 'N/A'})`).join(', ')}`
