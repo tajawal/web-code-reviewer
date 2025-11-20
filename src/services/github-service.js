@@ -142,9 +142,10 @@ class GitHubService {
       });
 
       const labelsToRemove = labels
-        .filter(label => 
-          label.name.toLowerCase() === CONFIG.SAFE_TO_MERGE_LABEL.toLowerCase() ||
-          label.name.toLowerCase() === CONFIG.UNSAFE_TO_MERGE_LABEL.toLowerCase()
+        .filter(
+          label =>
+            label.name.toLowerCase() === CONFIG.SAFE_TO_MERGE_LABEL.toLowerCase() ||
+            label.name.toLowerCase() === CONFIG.UNSAFE_TO_MERGE_LABEL.toLowerCase()
         )
         .map(label => label.name);
 
@@ -172,8 +173,8 @@ class GitHubService {
       // First, remove any existing merge status labels
       await this.removeMergeStatusLabels();
 
-      const labelName = shouldBlockMerge 
-        ? CONFIG.UNSAFE_TO_MERGE_LABEL 
+      const labelName = shouldBlockMerge
+        ? CONFIG.UNSAFE_TO_MERGE_LABEL
         : CONFIG.SAFE_TO_MERGE_LABEL;
 
       // Check if the label already exists on the PR (shouldn't after removal, but just in case)
@@ -208,9 +209,7 @@ class GitHubService {
           try {
             await this.createMergeStatusLabel(shouldBlockMerge);
           } catch (createError) {
-            core.warning(
-              `⚠️  Could not create "${labelName}" label: ${createError.message}`
-            );
+            core.warning(`⚠️  Could not create "${labelName}" label: ${createError.message}`);
           }
         } else {
           core.warning(`⚠️  Error adding "${labelName}" label: ${error.message}`);
@@ -226,14 +225,14 @@ class GitHubService {
    */
   async createMergeStatusLabel(shouldBlockMerge) {
     try {
-      const labelName = shouldBlockMerge 
-        ? CONFIG.UNSAFE_TO_MERGE_LABEL 
+      const labelName = shouldBlockMerge
+        ? CONFIG.UNSAFE_TO_MERGE_LABEL
         : CONFIG.SAFE_TO_MERGE_LABEL;
-      const labelColor = shouldBlockMerge 
-        ? CONFIG.UNSAFE_TO_MERGE_LABEL_COLOR 
+      const labelColor = shouldBlockMerge
+        ? CONFIG.UNSAFE_TO_MERGE_LABEL_COLOR
         : CONFIG.SAFE_TO_MERGE_LABEL_COLOR;
-      const labelDescription = shouldBlockMerge 
-        ? CONFIG.UNSAFE_TO_MERGE_LABEL_DESCRIPTION 
+      const labelDescription = shouldBlockMerge
+        ? CONFIG.UNSAFE_TO_MERGE_LABEL_DESCRIPTION
         : CONFIG.SAFE_TO_MERGE_LABEL_DESCRIPTION;
 
       await this.octokit.rest.issues.createLabel({
