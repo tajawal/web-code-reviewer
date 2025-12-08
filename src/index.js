@@ -143,7 +143,7 @@ class GitHubActionsReviewer {
         this.inputs.ignorePatterns
       );
 
-      await this.githubService.addPRComment(prComment);
+      await this.githubService.addPRComment(prComment, shouldBlockMerge);
 
       // Log review data to external endpoint (non-blocking)
       const reviewData = this.reviewService.prepareReviewLogData(
