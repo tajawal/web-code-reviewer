@@ -87215,7 +87215,13 @@ module.exports = CORE_CONFIG;
 const LABEL_CONFIG = {
   POST_REVIEW_LABEL: 'deep review completed',
   POST_REVIEW_LABEL_COLOR: '0366d6', // GitHub blue color
-  POST_REVIEW_LABEL_DESCRIPTION: 'Pull request has been reviewed by AI code reviewer'
+  POST_REVIEW_LABEL_DESCRIPTION: 'Pull request has been reviewed by AI code reviewer',
+  SAFE_TO_MERGE_LABEL: 'safe to merge',
+  SAFE_TO_MERGE_LABEL_COLOR: '28a745', // GitHub green color
+  SAFE_TO_MERGE_LABEL_DESCRIPTION: 'Code review passed - no critical issues found',
+  UNSAFE_TO_MERGE_LABEL: 'unsafe to merge',
+  UNSAFE_TO_MERGE_LABEL_COLOR: 'd73a4a', // GitHub red color
+  UNSAFE_TO_MERGE_LABEL_DESCRIPTION: 'Code review found critical issues - merge blocked'
 };
 
 module.exports = LABEL_CONFIG;
@@ -89790,6 +89796,18 @@ Before marking any issue as CRITICAL, you MUST verify against the "Imported File
 - If imported context clearly resolves the concern → confidence = 0.9, severity = suggestion or omit
 - If imported context is present but ambiguous → confidence ≤ 0.6, severity ≤ medium
 - If no imported context available → confidence ≤ 0.5, be conservative with CRITICAL severity
+
+**Issue Deduplication**:
+- Before creating a new issue, check if you already reported the same root cause in a different file
+- If the same problem affects multiple files, create ONE issue with multiple occurrences
+- Example: Prop removed from interface (FileA) but still used in call (FileB) → ONE issue with TWO occurrences
+- Use the "occurrences" array to list all affected locations:
+  [{file: "FileA.tsx", lines: [10]}, {file: "FileB.tsx", lines: [20]}]
+- Common patterns requiring deduplication:
+  • Prop/parameter removed from signature but still passed/used elsewhere
+  • Function renamed in definition but old name still used in callers
+  • Type changed in interface but incompatible usage in implementations
+  • Import path changed but old path still referenced
 `;
 
 /**
@@ -92012,10 +92030,139 @@ class GitHubService {
   }
 
   /**
+   * Remove merge status labels (safe to merge / unsafe to merge)
+   */
+  async removeMergeStatusLabels() {
+    try {
+      const { data: labels } = await this.octokit.rest.issues.listLabelsOnIssue({
+        owner: this.context.repo.owner,
+        repo: this.context.repo.repo,
+        issue_number: this.context.issue.number
+      });
+
+      const labelsToRemove = labels
+        .filter(
+          label =>
+            label.name.toLowerCase() === CONFIG.SAFE_TO_MERGE_LABEL.toLowerCase() ||
+            label.name.toLowerCase() === CONFIG.UNSAFE_TO_MERGE_LABEL.toLowerCase()
+        )
+        .map(label => label.name);
+
+      if (labelsToRemove.length > 0) {
+        for (const labelName of labelsToRemove) {
+          await this.octokit.rest.issues.removeLabel({
+            owner: this.context.repo.owner,
+            repo: this.context.repo.repo,
+            issue_number: this.context.issue.number,
+            name: labelName
+          });
+        }
+        core.info(`🏷️  Removed previous merge status labels: ${labelsToRemove.join(', ')}`);
+      }
+    } catch (error) {
+      core.warning(`⚠️  Error removing merge status labels: ${error.message}`);
+    }
+  }
+
+  /**
+   * Add merge status label based on review result
+   */
+  async addMergeStatusLabel(shouldBlockMerge) {
+    try {
+      // First, remove any existing merge status labels
+      await this.removeMergeStatusLabels();
+
+      const labelName = shouldBlockMerge
+        ? CONFIG.UNSAFE_TO_MERGE_LABEL
+        : CONFIG.SAFE_TO_MERGE_LABEL;
+
+      // Check if the label already exists on the PR (shouldn't after removal, but just in case)
+      const { data: labels } = await this.octokit.rest.issues.listLabelsOnIssue({
+        owner: this.context.repo.owner,
+        repo: this.context.repo.repo,
+        issue_number: this.context.issue.number
+      });
+
+      const labelExists = labels.some(
+        label => label.name.toLowerCase() === labelName.toLowerCase()
+      );
+
+      if (labelExists) {
+        core.info(`🏷️  Label "${labelName}" already exists on PR`);
+        return;
+      }
+
+      // Try to add the label to the PR
+      try {
+        await this.octokit.rest.issues.addLabels({
+          owner: this.context.repo.owner,
+          repo: this.context.repo.repo,
+          issue_number: this.context.issue.number,
+          labels: [labelName]
+        });
+
+        core.info(`🏷️  Successfully added "${labelName}" label to PR`);
+      } catch (error) {
+        // If the label doesn't exist in the repository, try to create it first
+        if (error.status === 422) {
+          try {
+            await this.createMergeStatusLabel(shouldBlockMerge);
+          } catch (createError) {
+            core.warning(`⚠️  Could not create "${labelName}" label: ${createError.message}`);
+          }
+        } else {
+          core.warning(`⚠️  Error adding "${labelName}" label: ${error.message}`);
+        }
+      }
+    } catch (error) {
+      core.warning(`⚠️  Error adding merge status label: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create merge status label in the repository
+   */
+  async createMergeStatusLabel(shouldBlockMerge) {
+    try {
+      const labelName = shouldBlockMerge
+        ? CONFIG.UNSAFE_TO_MERGE_LABEL
+        : CONFIG.SAFE_TO_MERGE_LABEL;
+      const labelColor = shouldBlockMerge
+        ? CONFIG.UNSAFE_TO_MERGE_LABEL_COLOR
+        : CONFIG.SAFE_TO_MERGE_LABEL_COLOR;
+      const labelDescription = shouldBlockMerge
+        ? CONFIG.UNSAFE_TO_MERGE_LABEL_DESCRIPTION
+        : CONFIG.SAFE_TO_MERGE_LABEL_DESCRIPTION;
+
+      await this.octokit.rest.issues.createLabel({
+        owner: this.context.repo.owner,
+        repo: this.context.repo.repo,
+        name: labelName,
+        color: labelColor,
+        description: labelDescription
+      });
+
+      core.info(`🏷️  Created "${labelName}" label in repository`);
+
+      // Now try to add it to the PR
+      await this.octokit.rest.issues.addLabels({
+        owner: this.context.repo.owner,
+        repo: this.context.repo.repo,
+        issue_number: this.context.issue.number,
+        labels: [labelName]
+      });
+
+      core.info(`🏷️  Successfully added "${labelName}" label to PR`);
+    } catch (error) {
+      core.warning(`⚠️  Error creating merge status label: ${error.message}`);
+    }
+  }
+
+  /**
    * Add PR comment to GitHub
    * Always deletes old comments first, then adds a new comment
    */
-  async addPRComment(comment) {
+  async addPRComment(comment, shouldBlockMerge) {
     if (this.context.eventName !== 'pull_request') {
       core.info('⚠️  Not a pull request event, skipping PR comment');
       return;
@@ -92038,6 +92185,10 @@ class GitHubService {
       // Step 3: Add "post code review" label to the PR
       core.info('🏷️  Adding "post code review" label to PR...');
       await this.addPostCodeReviewLabel();
+
+      // Step 4: Add merge status label (safe to merge / unsafe to merge)
+      core.info('🏷️  Adding merge status label to PR...');
+      await this.addMergeStatusLabel(shouldBlockMerge);
     } catch (error) {
       core.error(`❌ Error adding PR comment: ${error.message}`);
     }
@@ -137410,7 +137561,7 @@ module.exports = /*#__PURE__*/JSON.parse('["AggregateError","Array","ArrayBuffer
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.41","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","test:local":"node scripts/test-local.js","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","@babel/parser":"^7.28.5","@babel/traverse":"^7.28.5","java-ast":"^0.4.1","node-fetch":"^3.3.2","php-parser":"^3.2.5"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
+module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.43","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","test:local":"node scripts/test-local.js","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","@babel/parser":"^7.28.5","@babel/traverse":"^7.28.5","java-ast":"^0.4.1","node-fetch":"^3.3.2","php-parser":"^3.2.5"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
 
 /***/ })
 
@@ -137564,7 +137715,7 @@ const LoggingService = __nccwpck_require__(68689);
 
 // Version information - updated during build process
 const VERSION_INFO = {
-  version: '1.14.41',
+  version: '1.14.43',
   name: 'web-code-reviewer',
   description: 'Automated code review using LLM (Claude/OpenAI) for GitHub PRs'
 };
@@ -137693,7 +137844,7 @@ class GitHubActionsReviewer {
         this.inputs.ignorePatterns
       );
 
-      await this.githubService.addPRComment(prComment);
+      await this.githubService.addPRComment(prComment, shouldBlockMerge);
 
       // Log review data to external endpoint (non-blocking)
       const reviewData = this.reviewService.prepareReviewLogData(
