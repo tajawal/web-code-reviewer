@@ -284,8 +284,8 @@ class GitHubService {
       core.info('✅ Added new PR comment successfully');
 
       // Step 3: Add "post code review" label to the PR
-      core.info('🏷️  Adding "post code review" label to PR...');
-      await this.addPostCodeReviewLabel();
+      // core.info('🏷️  Adding "post code review" label to PR...');
+      // await this.addPostCodeReviewLabel();
 
       // Step 4: Add merge status label (safe to merge / unsafe to merge)
       // core.info('🏷️  Adding merge status label to PR...');
