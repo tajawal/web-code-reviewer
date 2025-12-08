@@ -92187,8 +92187,8 @@ class GitHubService {
       await this.addPostCodeReviewLabel();
 
       // Step 4: Add merge status label (safe to merge / unsafe to merge)
-      core.info('🏷️  Adding merge status label to PR...');
-      await this.addMergeStatusLabel(shouldBlockMerge);
+      // core.info('🏷️  Adding merge status label to PR...');
+      // await this.addMergeStatusLabel(shouldBlockMerge);
     } catch (error) {
       core.error(`❌ Error adding PR comment: ${error.message}`);
     }
