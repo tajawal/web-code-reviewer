@@ -72,7 +72,7 @@ const LLM_PROVIDERS = {
   },
   claude: {
     url: 'https://api.anthropic.com/v1/messages',
-    model: 'claude-sonnet-4-6-20250514',
+    model: 'claude-sonnet-4-6',
     headers: apiKey => ({
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
