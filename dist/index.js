@@ -90073,6 +90073,31 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   python: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`request.args.get()\` / \`request.form.get()\` (Flask) → \`str | None\`
+   - \`request.GET.get()\` / \`request.POST.get()\` (Django) → \`str | None\`
+   - \`request.query_params\` (FastAPI) → depends on type hints, may be \`None\`
+   - API responses → check response type, may be \`None\` or have optional fields
+   - Environment variables \`os.environ.get()\` → \`str | None\`
+   - Database query results → may return \`None\` or empty list
+
+2. **Trace where data flows**:
+   - From source (request params, API response, env vars, DB)
+   - Through intermediate functions (services, utils, validators)
+   - To destination (database queries, API calls, templates)
+
+3. **At each boundary, verify type compatibility**:
+   - If source may be \`None\` but destination expects \`str\` → CRITICAL type mismatch
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If SQL/API expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Don't assume \`or ""\` default handles all cases
+   - Watch for \`Optional[T]\` passed to functions expecting \`T\`
+
 Python-Specific Validation Rules:
 - **Missing try-except**: Check imported function for @safe decorator, internal error handling, documented exceptions, or context managers → Don't flag as CRITICAL if handled internally.
 - **Type Hints & None**: If imported stub (.pyi) or function signature shows Optional[T] or Union[T, None] → Don't flag None checks as missing.
@@ -90116,6 +90141,31 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
 
   java: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
+
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`@RequestParam\` → \`String\`, may be \`null\` unless \`required=true\`
+   - \`@PathVariable\` → \`String\`, typically non-null but verify
+   - \`HttpServletRequest.getParameter()\` → \`String | null\`
+   - \`@RequestBody\` → deserialized object, fields may be \`null\`
+   - Environment variables \`System.getenv()\` → \`String | null\`
+   - Database query results → may return \`null\` or \`Optional.empty()\`
+
+2. **Trace where data flows**:
+   - From source (controller params, request body, env vars, DB)
+   - Through intermediate layers (services, repositories, mappers)
+   - To destination (database queries, external APIs, responses)
+
+3. **At each boundary, verify type compatibility**:
+   - If source may be \`null\` but destination expects non-null → CRITICAL (NPE risk)
+   - If data flows through a method that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If JPA entity field removed but still referenced → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Watch for \`Optional.get()\` without \`isPresent()\` check
+   - Watch for missing \`@NotNull\` validation on nullable inputs
 
 Java-Specific Validation Rules:
 - **Null Safety**: Check imported method signature for @Nullable/@NonNull/@NotNull annotations → Only flag if annotation confirms nullable.
@@ -90161,6 +90211,30 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
 
   php: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
+
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`$_GET\`, \`$_POST\`, \`$_REQUEST\` → \`string | array | null\`
+   - \`$request->input()\` / \`$request->get()\` (Laravel) → \`mixed\`, may be \`null\`
+   - \`$request->query->get()\` (Symfony) → \`string | null\`
+   - Environment variables \`getenv()\` / \`$_ENV\` → \`string | false\`
+   - Database query results → may return \`null\` or empty array
+
+2. **Trace where data flows**:
+   - From source (request params, env vars, DB)
+   - Through intermediate functions (services, repositories, validators)
+   - To destination (database queries, API calls, templates)
+
+3. **At each boundary, verify type compatibility**:
+   - If source may be \`null\` but destination expects \`string\` → CRITICAL type mismatch
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If SQL expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Watch for missing null coalescing (\`??\`) on nullable inputs
+   - Watch for \`mixed\` type passed to functions expecting specific types
 
 PHP-Specific Validation Rules:
 - **SQL Injection**: If imported ORM/query builder method uses prepared statements or parameter binding → Don't flag as CRITICAL.
@@ -90208,6 +90282,30 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
 
   swift: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
+
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - URL query parameters → \`String?\`
+   - \`URLComponents.queryItems\` → \`[URLQueryItem]?\`, values are \`String?\`
+   - API responses (Codable) → fields may be \`Optional\` or have default values
+   - \`UserDefaults\` → \`Any?\`, requires casting
+   - \`ProcessInfo.processInfo.environment\` → \`[String: String]\`, key may not exist
+
+2. **Trace where data flows**:
+   - From source (URL params, API response, UserDefaults, env)
+   - Through intermediate layers (ViewModels, Services, Managers)
+   - To destination (API calls, CoreData, UI updates)
+
+3. **At each boundary, verify type compatibility**:
+   - If source is \`Optional\` but destination expects non-optional → CRITICAL (force unwrap risk)
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If API expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Watch for force unwrap (\`!\`) on data from external sources
+   - Watch for \`as!\` casting without validation
 
 Swift-Specific Validation Rules:
 - **Force Unwraps**: If imported property/method signature shows non-optional type (no ?) → Force unwrap may be safe; if shows optional (?) → Flag force unwrap as risky.
