@@ -289,6 +289,17 @@ class ReviewService {
           }
           issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
           issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
+          if (
+            issue.data_flow_trace &&
+            Array.isArray(issue.data_flow_trace) &&
+            issue.data_flow_trace.length > 0 &&
+            issue.data_flow_trace[0] !== 'N/A - static code issue'
+          ) {
+            issueDetails += `- **Data Flow**:\n`;
+            issue.data_flow_trace.forEach(step => {
+              issueDetails += `  - ${step}\n`;
+            });
+          }
           if (issue.fix_summary) {
             issueDetails += `- **Fix Summary**: ${issue.fix_summary}\n`;
           }
@@ -317,6 +328,17 @@ class ReviewService {
           }
           issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
           issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
+          if (
+            issue.data_flow_trace &&
+            Array.isArray(issue.data_flow_trace) &&
+            issue.data_flow_trace.length > 0 &&
+            issue.data_flow_trace[0] !== 'N/A - static code issue'
+          ) {
+            issueDetails += `- **Data Flow**:\n`;
+            issue.data_flow_trace.forEach(step => {
+              issueDetails += `  - ${step}\n`;
+            });
+          }
           if (issue.fix_summary) {
             issueDetails += `- **Fix Summary**: ${issue.fix_summary}\n`;
           }
