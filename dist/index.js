@@ -87118,10 +87118,16 @@ function wrappy (fn, cb) {
 const CONTEXT_CONFIG = {
   // FIXED context size for determinism (not dynamic)
   // Using fixed size ensures every review gets consistent context
-  FIXED_CONTEXT_SIZE: 100 * 1024, // 100KB fixed context - provides good balance
+  // Increased for Sonnet 4.6's 1M token context window
+  FIXED_CONTEXT_SIZE: 200 * 1024, // 200KB fixed context - leverages larger context window
 
   // Legacy dynamic sizing (kept for backward compatibility, but not used)
-  MAX_CONTEXT_SIZE: 120 * 1024, // 120KB max context size (fallback) - increased for better context
+  MAX_CONTEXT_SIZE: 250 * 1024, // 250KB max context size (fallback) - increased for Sonnet 4.6
+
+  // Full content for direct imports (hybrid approach)
+  FULL_CONTENT_FOR_DIRECT_IMPORTS: true, // Include full file content for first-level imports
+  MAX_DIRECT_IMPORT_LINES: 2000, // Max lines per imported file
+  MAX_DIRECT_IMPORTS: 5, // Max number of direct imports to include full content
   MAX_PROJECT_FILES: 30, // Max files to include in project structure
   MAX_COMMIT_HISTORY: 5, // Reduced from 15 for more focused context
   MAX_IMPORT_LINES: 10, // Reduced from 15 for more focused context
@@ -87480,14 +87486,14 @@ const LLM_PROVIDERS = {
   },
   claude: {
     url: 'https://api.anthropic.com/v1/messages',
-    model: 'claude-sonnet-4-5-20250929',
+    model: 'claude-sonnet-4-6-20250514',
     headers: apiKey => ({
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01'
     }),
     body: (prompt, diff) => ({
-      model: 'claude-sonnet-4-5-20250929',
+      model: 'claude-sonnet-4-6-20250514',
       max_tokens: CORE_CONFIG.MAX_TOKENS,
       temperature: CORE_CONFIG.TEMPERATURE,
       messages: [
@@ -91144,8 +91150,9 @@ class ContextService {
 
         context += `Found ${importedFiles.size} imported file(s) that are not part of the changes:\n\n`;
 
-        // Second pass: get AST for imported files (limit to prevent context explosion)
-        const sortedImports = Array.from(importedFiles).sort().slice(0, 5); // Limit to 5 files
+        // Second pass: get content for imported files (limit to prevent context explosion)
+        const maxImports = CONTEXT_CONFIG.MAX_DIRECT_IMPORTS || 5;
+        const sortedImports = Array.from(importedFiles).sort().slice(0, maxImports);
 
         for (const importedFile of sortedImports) {
           try {
@@ -91161,24 +91168,39 @@ class ContextService {
             }
 
             const fileLanguage = this.detectLanguageFromPath(importedFile);
-            const analyzer = getLanguageAnalyzer(fileLanguage);
 
-            // Get definitions from imported file
-            const definitions = analyzer.getDefinitions(fileContent) || [];
-            if (definitions.length > 0) {
-              context += '  📝 Exports/Definitions:\n';
-              definitions.slice(0, 5).forEach(def => {
-                context += `    ${def}\n`;
-              });
-            }
+            // Hybrid approach: Full content for direct imports if enabled
+            if (CONTEXT_CONFIG.FULL_CONTENT_FOR_DIRECT_IMPORTS) {
+              const lines = fileContent.split('\n');
+              const maxLines = CONTEXT_CONFIG.MAX_DIRECT_IMPORT_LINES || 2000;
+              const truncatedContent = lines.slice(0, maxLines).join('\n');
 
-            // Get exports from imported file
-            const exports = analyzer.getExports(fileContent) || [];
-            if (exports.length > 0) {
-              context += '  📤 Exports:\n';
-              exports.slice(0, 5).forEach(exp => {
-                context += `    ${exp}\n`;
-              });
+              context += `  📄 Full Content:\n`;
+              context += `  \`\`\`${fileLanguage}\n`;
+              context += truncatedContent;
+              if (lines.length > maxLines) {
+                context += `\n  ... (${lines.length - maxLines} more lines truncated)`;
+              }
+              context += `\n  \`\`\`\n`;
+            } else {
+              // Fallback: Semantic-only (definitions + exports)
+              const analyzer = getLanguageAnalyzer(fileLanguage);
+
+              const definitions = analyzer.getDefinitions(fileContent) || [];
+              if (definitions.length > 0) {
+                context += '  📝 Exports/Definitions:\n';
+                definitions.slice(0, 5).forEach(def => {
+                  context += `    ${def}\n`;
+                });
+              }
+
+              const exports = analyzer.getExports(fileContent) || [];
+              if (exports.length > 0) {
+                context += '  📤 Exports:\n';
+                exports.slice(0, 5).forEach(exp => {
+                  context += `    ${exp}\n`;
+                });
+              }
             }
 
             context += '\n';

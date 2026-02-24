@@ -601,8 +601,9 @@ class ContextService {
 
         context += `Found ${importedFiles.size} imported file(s) that are not part of the changes:\n\n`;
 
-        // Second pass: get AST for imported files (limit to prevent context explosion)
-        const sortedImports = Array.from(importedFiles).sort().slice(0, 5); // Limit to 5 files
+        // Second pass: get content for imported files (limit to prevent context explosion)
+        const maxImports = CONTEXT_CONFIG.MAX_DIRECT_IMPORTS || 5;
+        const sortedImports = Array.from(importedFiles).sort().slice(0, maxImports);
 
         for (const importedFile of sortedImports) {
           try {
@@ -618,24 +619,39 @@ class ContextService {
             }
 
             const fileLanguage = this.detectLanguageFromPath(importedFile);
-            const analyzer = getLanguageAnalyzer(fileLanguage);
 
-            // Get definitions from imported file
-            const definitions = analyzer.getDefinitions(fileContent) || [];
-            if (definitions.length > 0) {
-              context += '  📝 Exports/Definitions:\n';
-              definitions.slice(0, 5).forEach(def => {
-                context += `    ${def}\n`;
-              });
-            }
+            // Hybrid approach: Full content for direct imports if enabled
+            if (CONTEXT_CONFIG.FULL_CONTENT_FOR_DIRECT_IMPORTS) {
+              const lines = fileContent.split('\n');
+              const maxLines = CONTEXT_CONFIG.MAX_DIRECT_IMPORT_LINES || 2000;
+              const truncatedContent = lines.slice(0, maxLines).join('\n');
 
-            // Get exports from imported file
-            const exports = analyzer.getExports(fileContent) || [];
-            if (exports.length > 0) {
-              context += '  📤 Exports:\n';
-              exports.slice(0, 5).forEach(exp => {
-                context += `    ${exp}\n`;
-              });
+              context += `  📄 Full Content:\n`;
+              context += `  \`\`\`${fileLanguage}\n`;
+              context += truncatedContent;
+              if (lines.length > maxLines) {
+                context += `\n  ... (${lines.length - maxLines} more lines truncated)`;
+              }
+              context += `\n  \`\`\`\n`;
+            } else {
+              // Fallback: Semantic-only (definitions + exports)
+              const analyzer = getLanguageAnalyzer(fileLanguage);
+
+              const definitions = analyzer.getDefinitions(fileContent) || [];
+              if (definitions.length > 0) {
+                context += '  📝 Exports/Definitions:\n';
+                definitions.slice(0, 5).forEach(def => {
+                  context += `    ${def}\n`;
+                });
+              }
+
+              const exports = analyzer.getExports(fileContent) || [];
+              if (exports.length > 0) {
+                context += '  📤 Exports:\n';
+                exports.slice(0, 5).forEach(exp => {
+                  context += `    ${exp}\n`;
+                });
+              }
             }
 
             context += '\n';
