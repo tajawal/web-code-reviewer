@@ -82,6 +82,7 @@ const LLM_PROVIDERS = {
       model: 'claude-sonnet-4-6',
       max_tokens: CORE_CONFIG.MAX_TOKENS,
       temperature: CORE_CONFIG.TEMPERATURE,
+      top_k: 1, // Force deterministic: always pick highest probability token
       messages: [
         {
           role: 'user',
