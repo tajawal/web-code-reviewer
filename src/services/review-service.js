@@ -221,12 +221,6 @@ class ReviewService {
       );
     }
 
-    // Create review summary
-    let reviewSummary = '';
-    if (extractedData.summaries.length > 0) {
-      reviewSummary = `**AI Summary**: ${extractedData.summaries.join(' ')}\n\n`;
-    }
-
     // Create structured issue display
     let issueDetails = '';
     let reviewMetrics = '';
@@ -345,8 +339,6 @@ class ReviewService {
     return `## 🤖 DeepReview
 
 **Overall Assessment**: ${status} - ${statusDescription}
-
-${reviewSummary}
 
 ---
 
