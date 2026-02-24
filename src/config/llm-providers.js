@@ -29,29 +29,34 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
    - "final_recommendation": "do_not_merge" or "safe_to_merge"
 
 4. For each issue, provide ALL required fields:
+   - data_flow_trace (REQUIRED FIRST - array, see rule 5)
    - id, category, severity_proposed, severity_score
    - risk_factors (object with impact, exploitability, likelihood, blast_radius, evidence_strength)
    - confidence, file, lines, snippet
-   - data_flow_trace (REQUIRED - see below)
    - why_it_matters, fix_summary, fix_code_patch, tests, occurrences
 
-5. DATA FLOW TRACE (MANDATORY for every issue):
-   Before determining severity, you MUST trace the data flow and document it in "data_flow_trace" array:
-   - Step 1: Identify the SOURCE (where data comes from, with its type)
-   - Step 2: Trace through INTERMEDIATE functions (what happens at each step)
-   - Step 3: Identify the DESTINATION (where data ends up, what type is expected)
-   - Step 4: Note any MISMATCH or DROPPED parameters
+5. DATA FLOW TRACE - MANDATORY FIRST FIELD FOR EVERY ISSUE:
+   BEFORE writing any issue, you MUST FIRST create the "data_flow_trace" array:
+
+   "data_flow_trace": [
+     "SOURCE: <where data originates> → <type>",
+     "INTERMEDIATE: <what happens at each step>",
+     "DESTINATION: <where data ends up> → <expected type>",
+     "MISMATCH: <type mismatch or dropped parameter, if any>"
+   ]
 
    Example:
    "data_flow_trace": [
-     "SOURCE: router.query.phone → type: string | string[] | undefined",
+     "SOURCE: router.query.phone → string | string[] | undefined",
      "INTERMEDIATE: passed to store.fetch({ phone })",
-     "INTERMEDIATE: store calls client.verify() but drops 'phone' parameter",
-     "DESTINATION: client.verify() sends empty {} to API",
-     "MISMATCH: 'phone' parameter is dropped, API may require it"
+     "INTERMEDIATE: store calls client.verify() but drops phone",
+     "DESTINATION: client.verify() sends {} to API",
+     "MISMATCH: phone parameter dropped, API may require it"
    ]
 
-   If no data flow is relevant, use: ["N/A - static code issue"]
+   If no data flow: ["N/A - static code issue"]
+
+   WARNING: Issues WITHOUT data_flow_trace will be REJECTED.
 
 6. SEVERITY RULES (deterministic):
    - CRITICAL only if: severity_score >= 3.60 AND evidence_strength >= 4 AND confidence >= 0.7
