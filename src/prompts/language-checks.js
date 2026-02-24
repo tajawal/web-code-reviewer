@@ -148,12 +148,6 @@ When you see parameters, fields, or arguments REMOVED in the diff (lines startin
    - NEW: \`$http.post(url, {})\` or \`$http.post(url)\`
    - If the API endpoint historically required a header → Flag as CRITICAL: "Header 'x-captcha-token' removed from API call - verify endpoint no longer requires it"
 
-**Scoring for Breaking Changes**:
-- Parameter removed, downstream contract unknown: evidence_strength=4, confidence=0.8, severity_score=3.8 → CRITICAL
-- Parameter removed, downstream also changed: evidence_strength=3, confidence=0.6 → SUGGESTION
-- Interface field removed, still referenced: evidence_strength=5, confidence=0.9 → CRITICAL
-- Parameter accepted but not used/forwarded: evidence_strength=4, confidence=0.85 → CRITICAL (likely a bug)
-- API header removed: evidence_strength=4, confidence=0.8 → CRITICAL
 `;
 
 /**
@@ -240,30 +234,6 @@ Note: Use post-patch line numbers for precise anchoring.`
 const LANGUAGE_SPECIFIC_CHECKS = {
   js: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
-
-**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
-When reviewing code, you MUST trace data flow and verify type compatibility:
-
-1. **Identify data sources and their types**:
-   - \`router.query\` / \`useRouter().query\` → \`string | string[] | undefined\` (NEVER just \`string\`)
-   - \`context.query\` in getServerSideProps/getStaticProps → same type
-   - API responses → check response type, may be \`null\` or have optional fields
-   - User input (forms, URL params) → always \`string\`, may be \`undefined\`
-   - Environment variables → \`string | undefined\`
-
-2. **Trace where data flows**:
-   - From source (router.query, API response, user input)
-   - Through intermediate functions (stores, services, utils)
-   - To destination (API calls, state updates, rendering)
-
-3. **At each boundary, verify type compatibility**:
-   - If source type is \`string | string[] | undefined\` but destination expects \`string\` → CRITICAL type mismatch
-   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
-   - If API expects a field but caller doesn't send it → CRITICAL
-
-4. **Flag mismatches immediately**:
-   - Don't assume type assertions (\`as string\`) are safe without validation
-   - Don't assume optional chaining handles arrays (\`value?.length\` doesn't normalize arrays)
 
 JavaScript/TypeScript-Specific Validation Rules:
 - **Unused React Props**: If imported component definition shows prop NOT in destructuring pattern or PropTypes → Mark as SUGGESTION (not CRITICAL). React ignores extra props silently - this is NOT a runtime error.
