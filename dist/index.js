@@ -87118,10 +87118,16 @@ function wrappy (fn, cb) {
 const CONTEXT_CONFIG = {
   // FIXED context size for determinism (not dynamic)
   // Using fixed size ensures every review gets consistent context
-  FIXED_CONTEXT_SIZE: 100 * 1024, // 100KB fixed context - provides good balance
+  // Increased for Sonnet 4.6's 1M token context window
+  FIXED_CONTEXT_SIZE: 200 * 1024, // 200KB fixed context - leverages larger context window
 
   // Legacy dynamic sizing (kept for backward compatibility, but not used)
-  MAX_CONTEXT_SIZE: 120 * 1024, // 120KB max context size (fallback) - increased for better context
+  MAX_CONTEXT_SIZE: 250 * 1024, // 250KB max context size (fallback) - increased for Sonnet 4.6
+
+  // Full content for direct imports (hybrid approach)
+  FULL_CONTENT_FOR_DIRECT_IMPORTS: true, // Include full file content for first-level imports
+  MAX_DIRECT_IMPORT_LINES: 2000, // Max lines per imported file
+  MAX_DIRECT_IMPORTS: 5, // Max number of direct imports to include full content
   MAX_PROJECT_FILES: 30, // Max files to include in project structure
   MAX_COMMIT_HISTORY: 5, // Reduced from 15 for more focused context
   MAX_IMPORT_LINES: 10, // Reduced from 15 for more focused context
@@ -87437,21 +87443,46 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
    - "final_recommendation": "do_not_merge" or "safe_to_merge"
 
 4. For each issue, provide ALL required fields:
+   - data_flow_trace (REQUIRED FIRST - array, see rule 5)
    - id, category, severity_proposed, severity_score
    - risk_factors (object with impact, exploitability, likelihood, blast_radius, evidence_strength)
    - confidence, file, lines, snippet
    - why_it_matters, fix_summary, fix_code_patch, tests, occurrences
 
-5. SEVERITY RULES (deterministic):
+5. DATA FLOW TRACE - MANDATORY FIRST FIELD FOR EVERY ISSUE:
+   BEFORE writing any issue, you MUST FIRST create the "data_flow_trace" array:
+
+   "data_flow_trace": [
+     "SOURCE: <where data originates> → <type>",
+     "INTERMEDIATE: <what happens at each step>",
+     "DESTINATION: <where data ends up> → <expected type>",
+     "MISMATCH: <type mismatch or dropped parameter, if any>"
+   ]
+
+   Example:
+   "data_flow_trace": [
+     "SOURCE: router.query.phone → string | string[] | undefined",
+     "INTERMEDIATE: passed to store.fetch({ phone })",
+     "INTERMEDIATE: store calls client.verify() but drops phone",
+     "DESTINATION: client.verify() sends {} to API",
+     "MISMATCH: phone parameter dropped, API may require it"
+   ]
+
+   If no data flow: ["N/A - static code issue"]
+
+   WARNING: Issues WITHOUT data_flow_trace will be REJECTED.
+
+6. SEVERITY RULES (deterministic):
    - CRITICAL only if: severity_score >= 3.60 AND evidence_strength >= 4 AND confidence >= 0.7
+   - If data_flow_trace shows type mismatch or dropped parameter: evidence_strength = 5, severity_score >= 3.80
    - If evidence_strength <= 2 OR confidence <= 0.5: ALWAYS suggestion
    - Otherwise: suggestion
 
-6. SORT issues by severity_score (highest first)
+7. SORT issues by severity_score (highest first)
    - Ties: by category (security > performance > maintainability > best_practices)
    - Then by id, file, lines[0]
 
-7. Temperature is 0: Be deterministic and consistent`;
+8. Temperature is 0: Be deterministic and consistent`;
 
 const LLM_PROVIDERS = {
   openai: {
@@ -87480,16 +87511,17 @@ const LLM_PROVIDERS = {
   },
   claude: {
     url: 'https://api.anthropic.com/v1/messages',
-    model: 'claude-sonnet-4-5-20250929',
+    model: 'claude-sonnet-4-6',
     headers: apiKey => ({
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01'
     }),
     body: (prompt, diff) => ({
-      model: 'claude-sonnet-4-5-20250929',
+      model: 'claude-sonnet-4-6',
       max_tokens: CORE_CONFIG.MAX_TOKENS,
       temperature: CORE_CONFIG.TEMPERATURE,
+      top_k: 1, // Force deterministic: always pick highest probability token
       messages: [
         {
           role: 'user',
@@ -89808,6 +89840,53 @@ Before marking any issue as CRITICAL, you MUST verify against the "Imported File
   • Function renamed in definition but old name still used in callers
   • Type changed in interface but incompatible usage in implementations
   • Import path changed but old path still referenced
+
+**Breaking Change Detection (Parameter/Field Removal)**:
+When you see parameters, fields, or arguments REMOVED in the diff (lines starting with -), apply this decision tree:
+
+1. **Parameter removed from function call but downstream may still need it**:
+   - OLD: \`store.fetch({ phone, captchaToken })\` → NEW: \`store.fetch({})\`
+   - Check: Does the downstream function/API still expect \`captchaToken\`?
+   - If downstream contract is unchanged or unknown → Flag as CRITICAL: "Parameter 'captchaToken' removed but downstream may still require it"
+   - If downstream contract also changed to not need it → No issue
+
+2. **Interface field removed but implementations may still use it**:
+   - OLD: \`interface VerifyParams { email: string; token: string; }\` → NEW: \`interface VerifyParams { token: string; }\`
+   - Check: Are there callers still passing \`email\`? Are there implementations still expecting \`email\`?
+   - If yes → Flag as CRITICAL: "Interface field 'email' removed but still referenced elsewhere"
+
+3. **API request payload field removed**:
+   - OLD: \`$http.post(url, { token, captcha })\` → NEW: \`$http.post(url, {})\`
+   - Check: Does the API endpoint still require these fields?
+   - If API contract is unknown → Flag as SUGGESTION: "Verify API endpoint no longer requires 'token' and 'captcha' fields"
+   - If API clearly doesn't need them (e.g., migration docs) → No issue
+
+4. **Header/Auth token removed from API call**:
+   - OLD: \`headers: { 'x-captcha-token': captchaToken }\` → NEW: \`headers: {}\`
+   - Flag as CRITICAL unless migration explicitly documents the header is no longer needed
+
+5. **Parameter accepted but not forwarded (silently dropped)**:
+   - Pattern: Function accepts a parameter but doesn't use it or pass it to the downstream call
+   - Example:
+     \`\`\`
+     // Store accepts captchaToken but doesn't pass it to client
+     store.fetch({ phone, captchaToken }) {
+       return client.reSendVerifyPhone(); // captchaToken dropped here!
+     }
+
+     // Client sends empty request
+     reSendVerifyPhone() {
+       return $http.post(url, {}); // No headers, no body
+     }
+     \`\`\`
+   - Check: If a function parameter is not used in the function body AND not passed to downstream calls → Flag as CRITICAL
+   - Message: "Parameter 'captchaToken' is accepted but not forwarded to downstream API - verify if API requires it"
+
+6. **API request missing required headers after refactor**:
+   - OLD: \`$http.post(url, {}, { headers: { 'x-captcha-token': token } })\`
+   - NEW: \`$http.post(url, {})\` or \`$http.post(url)\`
+   - If the API endpoint historically required a header → Flag as CRITICAL: "Header 'x-captcha-token' removed from API call - verify endpoint no longer requires it"
+
 `;
 
 /**
@@ -89895,6 +89974,30 @@ const LANGUAGE_SPECIFIC_CHECKS = {
   js: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`router.query\` / \`useRouter().query\` → \`string | string[] | undefined\` (NEVER just \`string\`)
+   - \`context.query\` in getServerSideProps/getStaticProps → same type
+   - API responses → check response type, may be \`null\` or have optional fields
+   - User input (forms, URL params) → always \`string\`, may be \`undefined\`
+   - Environment variables → \`string | undefined\`
+
+2. **Trace where data flows**:
+   - From source (router.query, API response, user input)
+   - Through intermediate functions (stores, services, utils)
+   - To destination (API calls, state updates, rendering)
+
+3. **At each boundary, verify type compatibility**:
+   - If source type is \`string | string[] | undefined\` but destination expects \`string\` → CRITICAL type mismatch
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If API expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Don't assume type assertions (\`as string\`) are safe without validation
+   - Don't assume optional chaining handles arrays (\`value?.length\` doesn't normalize arrays)
+
 JavaScript/TypeScript-Specific Validation Rules:
 - **Unused React Props**: If imported component definition shows prop NOT in destructuring pattern or PropTypes → Mark as SUGGESTION (not CRITICAL). React ignores extra props silently - this is NOT a runtime error.
 - **Missing PropTypes/Types**: If imported context shows TypeScript interface or JSDoc types → Not an issue.
@@ -89916,6 +90019,27 @@ TypeScript:
 - any/unknown leakage across module boundaries (exports). Anchor export signature. Default: 3, 0.7.
 - Unsafe narrowing/non-null (!) where undefined is possible. Default: 3, 0.7.
 - Ambient/global type mutations widening types. Default: 3, 0.6.
+
+Package.json / Dependencies:
+- **Canary/pre-release versions before merge**: Versions containing \`-canary\`, \`-alpha\`, \`-beta\`, \`-rc\`, \`-next\`, \`-dev\`, \`-snapshot\`, or \`-experimental\` in package.json (either in "version" field or dependencies). Anchor: version string with pre-release tag. Default: 4, 0.9 → CRITICAL. Fix: Set proper release version (e.g., \`0.0.198\` instead of \`0.0.197-canary-migrate-v4\`) before merging to main/develop.
+- **Mismatched dependency versions across workspaces**: In monorepos, different packages depending on different versions of the same internal package. Anchor: version mismatch in multiple package.json files. Default: 3, 0.7.
+- **Git/file/link dependencies in production**: Dependencies like \`"package": "git+https://..."\` or \`"file:../local"\` that won't resolve in production. Anchor: non-registry dependency. Default: 4, 0.8 → CRITICAL.
+- **Missing peer dependencies**: Package requires peer deps that aren't installed. Default: 2, 0.6 (suggestion).
+- **Wildcard versions (\`*\` or \`latest\`)**: Non-deterministic builds. Anchor: \`"*"\` or \`"latest"\` in dependencies. Default: 3, 0.7.
+
+Next.js Type Awareness (CRITICAL - apply to all Next.js code):
+Next.js has specific type contracts that differ from plain React. When reviewing Next.js code, apply these type rules:
+
+- **router.query / context.query type**: ALL query values from \`useRouter().query\`, \`router.query\`, or \`context.query\` (in getServerSideProps/getStaticProps) are typed as \`string | string[] | undefined\` - NEVER just \`string\`. When these values are passed to functions/APIs expecting \`string\`, flag as CRITICAL type mismatch. The code must normalize with \`Array.isArray()\` check or type guard before use. Default: 4, 0.8.
+
+- **Dynamic route params hydration**: \`router.query\` params are \`undefined\` on first render before hydration completes. Code must check \`router.isReady\` or handle \`undefined\`. Default: 3, 0.7.
+
+- **getStaticProps serialization**: All data returned is serialized to JSON and exposed to clients. Flag if sensitive data (API keys, internal IDs, secrets) is returned. Default: 4, 0.8.
+- **Missing error handling in getServerSideProps/getStaticProps**: Unhandled errors cause 500 pages. Anchor: async data fetching without try-catch. Default: 3, 0.7.
+- **Exposing sensitive data in getStaticProps**: Data returned is serialized to HTML/JSON and visible to clients. Anchor: returning API keys, internal IDs, or sensitive fields. Default: 4, 0.8 → CRITICAL if sensitive.
+- **Missing revalidate in getStaticProps for dynamic data**: Stale data served indefinitely. Anchor: fetching dynamic data without ISR. Default: 2, 0.6 (suggestion).
+- **Client-side data fetching without SWR/React Query in components**: Missing loading/error states, no caching. Anchor: raw fetch/axios in useEffect. Default: 2, 0.5 (suggestion).
+- **Using next/link without prefetch={false} for rarely visited pages**: Unnecessary prefetching wastes bandwidth. Default: 2, 0.5 (suggestion only).
 
 Fetch/IO:
 - Missing AbortController/timeout on fetch/axios; no cancellation for long-lived calls. Default: 3, 0.7.
@@ -89953,6 +90077,31 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
 
   python: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
+
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`request.args.get()\` / \`request.form.get()\` (Flask) → \`str | None\`
+   - \`request.GET.get()\` / \`request.POST.get()\` (Django) → \`str | None\`
+   - \`request.query_params\` (FastAPI) → depends on type hints, may be \`None\`
+   - API responses → check response type, may be \`None\` or have optional fields
+   - Environment variables \`os.environ.get()\` → \`str | None\`
+   - Database query results → may return \`None\` or empty list
+
+2. **Trace where data flows**:
+   - From source (request params, API response, env vars, DB)
+   - Through intermediate functions (services, utils, validators)
+   - To destination (database queries, API calls, templates)
+
+3. **At each boundary, verify type compatibility**:
+   - If source may be \`None\` but destination expects \`str\` → CRITICAL type mismatch
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If SQL/API expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Don't assume \`or ""\` default handles all cases
+   - Watch for \`Optional[T]\` passed to functions expecting \`T\`
 
 Python-Specific Validation Rules:
 - **Missing try-except**: Check imported function for @safe decorator, internal error handling, documented exceptions, or context managers → Don't flag as CRITICAL if handled internally.
@@ -89998,6 +90147,31 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   java: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`@RequestParam\` → \`String\`, may be \`null\` unless \`required=true\`
+   - \`@PathVariable\` → \`String\`, typically non-null but verify
+   - \`HttpServletRequest.getParameter()\` → \`String | null\`
+   - \`@RequestBody\` → deserialized object, fields may be \`null\`
+   - Environment variables \`System.getenv()\` → \`String | null\`
+   - Database query results → may return \`null\` or \`Optional.empty()\`
+
+2. **Trace where data flows**:
+   - From source (controller params, request body, env vars, DB)
+   - Through intermediate layers (services, repositories, mappers)
+   - To destination (database queries, external APIs, responses)
+
+3. **At each boundary, verify type compatibility**:
+   - If source may be \`null\` but destination expects non-null → CRITICAL (NPE risk)
+   - If data flows through a method that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If JPA entity field removed but still referenced → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Watch for \`Optional.get()\` without \`isPresent()\` check
+   - Watch for missing \`@NotNull\` validation on nullable inputs
+
 Java-Specific Validation Rules:
 - **Null Safety**: Check imported method signature for @Nullable/@NonNull/@NotNull annotations → Only flag if annotation confirms nullable.
 - **Exception Handling**: If imported method signature declares checked exceptions (throws) → Verify handling; if NOT declared → Don't require try-catch.
@@ -90042,6 +90216,30 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
 
   php: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
+
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`$_GET\`, \`$_POST\`, \`$_REQUEST\` → \`string | array | null\`
+   - \`$request->input()\` / \`$request->get()\` (Laravel) → \`mixed\`, may be \`null\`
+   - \`$request->query->get()\` (Symfony) → \`string | null\`
+   - Environment variables \`getenv()\` / \`$_ENV\` → \`string | false\`
+   - Database query results → may return \`null\` or empty array
+
+2. **Trace where data flows**:
+   - From source (request params, env vars, DB)
+   - Through intermediate functions (services, repositories, validators)
+   - To destination (database queries, API calls, templates)
+
+3. **At each boundary, verify type compatibility**:
+   - If source may be \`null\` but destination expects \`string\` → CRITICAL type mismatch
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If SQL expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Watch for missing null coalescing (\`??\`) on nullable inputs
+   - Watch for \`mixed\` type passed to functions expecting specific types
 
 PHP-Specific Validation Rules:
 - **SQL Injection**: If imported ORM/query builder method uses prepared statements or parameter binding → Don't flag as CRITICAL.
@@ -90089,6 +90287,30 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
 
   swift: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
+
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - URL query parameters → \`String?\`
+   - \`URLComponents.queryItems\` → \`[URLQueryItem]?\`, values are \`String?\`
+   - API responses (Codable) → fields may be \`Optional\` or have default values
+   - \`UserDefaults\` → \`Any?\`, requires casting
+   - \`ProcessInfo.processInfo.environment\` → \`[String: String]\`, key may not exist
+
+2. **Trace where data flows**:
+   - From source (URL params, API response, UserDefaults, env)
+   - Through intermediate layers (ViewModels, Services, Managers)
+   - To destination (API calls, CoreData, UI updates)
+
+3. **At each boundary, verify type compatibility**:
+   - If source is \`Optional\` but destination expects non-optional → CRITICAL (force unwrap risk)
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If API expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Watch for force unwrap (\`!\`) on data from external sources
+   - Watch for \`as!\` casting without validation
 
 Swift-Specific Validation Rules:
 - **Force Unwraps**: If imported property/method signature shows non-optional type (no ?) → Force unwrap may be safe; if shows optional (?) → Flag force unwrap as risky.
@@ -91144,8 +91366,9 @@ class ContextService {
 
         context += `Found ${importedFiles.size} imported file(s) that are not part of the changes:\n\n`;
 
-        // Second pass: get AST for imported files (limit to prevent context explosion)
-        const sortedImports = Array.from(importedFiles).sort().slice(0, 5); // Limit to 5 files
+        // Second pass: get content for imported files (limit to prevent context explosion)
+        const maxImports = CONTEXT_CONFIG.MAX_DIRECT_IMPORTS || 5;
+        const sortedImports = Array.from(importedFiles).sort().slice(0, maxImports);
 
         for (const importedFile of sortedImports) {
           try {
@@ -91161,24 +91384,39 @@ class ContextService {
             }
 
             const fileLanguage = this.detectLanguageFromPath(importedFile);
-            const analyzer = getLanguageAnalyzer(fileLanguage);
 
-            // Get definitions from imported file
-            const definitions = analyzer.getDefinitions(fileContent) || [];
-            if (definitions.length > 0) {
-              context += '  📝 Exports/Definitions:\n';
-              definitions.slice(0, 5).forEach(def => {
-                context += `    ${def}\n`;
-              });
-            }
+            // Hybrid approach: Full content for direct imports if enabled
+            if (CONTEXT_CONFIG.FULL_CONTENT_FOR_DIRECT_IMPORTS) {
+              const lines = fileContent.split('\n');
+              const maxLines = CONTEXT_CONFIG.MAX_DIRECT_IMPORT_LINES || 2000;
+              const truncatedContent = lines.slice(0, maxLines).join('\n');
 
-            // Get exports from imported file
-            const exports = analyzer.getExports(fileContent) || [];
-            if (exports.length > 0) {
-              context += '  📤 Exports:\n';
-              exports.slice(0, 5).forEach(exp => {
-                context += `    ${exp}\n`;
-              });
+              context += `  📄 Full Content:\n`;
+              context += `  \`\`\`${fileLanguage}\n`;
+              context += truncatedContent;
+              if (lines.length > maxLines) {
+                context += `\n  ... (${lines.length - maxLines} more lines truncated)`;
+              }
+              context += `\n  \`\`\`\n`;
+            } else {
+              // Fallback: Semantic-only (definitions + exports)
+              const analyzer = getLanguageAnalyzer(fileLanguage);
+
+              const definitions = analyzer.getDefinitions(fileContent) || [];
+              if (definitions.length > 0) {
+                context += '  📝 Exports/Definitions:\n';
+                definitions.slice(0, 5).forEach(def => {
+                  context += `    ${def}\n`;
+                });
+              }
+
+              const exports = analyzer.getExports(fileContent) || [];
+              if (exports.length > 0) {
+                context += '  📤 Exports:\n';
+                exports.slice(0, 5).forEach(exp => {
+                  context += `    ${exp}\n`;
+                });
+              }
             }
 
             context += '\n';
@@ -93558,12 +93796,6 @@ class ReviewService {
       );
     }
 
-    // Create review summary
-    let reviewSummary = '';
-    if (extractedData.summaries.length > 0) {
-      reviewSummary = `**AI Summary**: ${extractedData.summaries.join(' ')}\n\n`;
-    }
-
     // Create structured issue display
     let issueDetails = '';
     let reviewMetrics = '';
@@ -93632,6 +93864,17 @@ class ReviewService {
           }
           issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
           issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
+          if (
+            issue.data_flow_trace &&
+            Array.isArray(issue.data_flow_trace) &&
+            issue.data_flow_trace.length > 0 &&
+            issue.data_flow_trace[0] !== 'N/A - static code issue'
+          ) {
+            issueDetails += `- **Data Flow**:\n`;
+            issue.data_flow_trace.forEach(step => {
+              issueDetails += `  - ${step}\n`;
+            });
+          }
           if (issue.fix_summary) {
             issueDetails += `- **Fix Summary**: ${issue.fix_summary}\n`;
           }
@@ -93660,6 +93903,17 @@ class ReviewService {
           }
           issueDetails += `- **File**: \`${issue.file}\` (lines ${issue.lines.join('-')})\n`;
           issueDetails += `- **Impact**: ${issue.why_it_matters}\n`;
+          if (
+            issue.data_flow_trace &&
+            Array.isArray(issue.data_flow_trace) &&
+            issue.data_flow_trace.length > 0 &&
+            issue.data_flow_trace[0] !== 'N/A - static code issue'
+          ) {
+            issueDetails += `- **Data Flow**:\n`;
+            issue.data_flow_trace.forEach(step => {
+              issueDetails += `  - ${step}\n`;
+            });
+          }
           if (issue.fix_summary) {
             issueDetails += `- **Fix Summary**: ${issue.fix_summary}\n`;
           }
@@ -93682,8 +93936,6 @@ class ReviewService {
     return `## 🤖 DeepReview
 
 **Overall Assessment**: ${status} - ${statusDescription}
-
-${reviewSummary}
 
 ---
 
@@ -137561,7 +137813,7 @@ module.exports = /*#__PURE__*/JSON.parse('["AggregateError","Array","ArrayBuffer
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.45","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","test:local":"node scripts/test-local.js","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","@babel/parser":"^7.28.5","@babel/traverse":"^7.28.5","java-ast":"^0.4.1","node-fetch":"^3.3.2","php-parser":"^3.2.5"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
+module.exports = /*#__PURE__*/JSON.parse('{"name":"web-code-reviewer","version":"1.14.46","description":"Automated code review using LLM (Claude/OpenAI) for GitHub PRs","main":"dist/index.js","scripts":{"build":"node scripts/update-version.js && ncc build src/index.js -o dist","prepare":"husky","test":"jest","test:watch":"jest --watch","test:coverage":"jest --coverage","test:local":"node scripts/test-local.js","lint":"eslint src/**/*.js test/**/*.js","lint:fix":"eslint src/**/*.js test/**/*.js --fix","format":"prettier --write src/**/*.js test/**/*.js","format:check":"prettier --check src/**/*.js test/**/*.js","lint:format":"npm run lint:fix && npm run format","check":"npm run lint && npm run format:check","lint-staged":"lint-staged"},"keywords":["github-action","code-review","llm","claude","openai","automation"],"author":"Tajawal","license":"MIT","dependencies":{"@actions/core":"^1.10.0","@actions/github":"^6.0.0","@babel/parser":"^7.28.5","@babel/traverse":"^7.28.5","java-ast":"^0.4.1","node-fetch":"^3.3.2","php-parser":"^3.2.5"},"devDependencies":{"@typescript-eslint/eslint-plugin":"^8.42.0","@typescript-eslint/parser":"^8.42.0","@vercel/ncc":"^0.38.0","dotenv":"^17.2.1","eslint":"^9.34.0","eslint-config-prettier":"^10.1.8","eslint-plugin-prettier":"^5.5.4","husky":"^9.1.7","jest":"^30.1.3","lint-staged":"^16.1.6","prettier":"^3.6.2","typescript":"^5.9.2"},"engines":{"node":">=18.0.0"}}');
 
 /***/ })
 
@@ -137715,7 +137967,7 @@ const LoggingService = __nccwpck_require__(68689);
 
 // Version information - updated during build process
 const VERSION_INFO = {
-  version: '1.14.45',
+  version: '1.14.46',
   name: 'web-code-reviewer',
   description: 'Automated code review using LLM (Claude/OpenAI) for GitHub PRs'
 };

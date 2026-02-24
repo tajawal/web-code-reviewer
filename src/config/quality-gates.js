@@ -126,9 +126,9 @@ const QUALITY_GATES = {
   // CONTEXT SIZE GATES
   // ============================================================================
   context: {
-    fixed_size: 100 * 1024, // Always use 100KB
+    fixed_size: 200 * 1024, // 200KB for Sonnet 4.6's larger context window
     determinism: 'FIXED size for consistency (no dynamic calculation)',
-    reasoning: 'Dynamic context sizing caused 20-40% variance'
+    reasoning: 'Increased for Sonnet 4.6 1M token context window'
   },
 
   // ============================================================================

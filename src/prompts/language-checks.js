@@ -101,6 +101,53 @@ Before marking any issue as CRITICAL, you MUST verify against the "Imported File
   • Function renamed in definition but old name still used in callers
   • Type changed in interface but incompatible usage in implementations
   • Import path changed but old path still referenced
+
+**Breaking Change Detection (Parameter/Field Removal)**:
+When you see parameters, fields, or arguments REMOVED in the diff (lines starting with -), apply this decision tree:
+
+1. **Parameter removed from function call but downstream may still need it**:
+   - OLD: \`store.fetch({ phone, captchaToken })\` → NEW: \`store.fetch({})\`
+   - Check: Does the downstream function/API still expect \`captchaToken\`?
+   - If downstream contract is unchanged or unknown → Flag as CRITICAL: "Parameter 'captchaToken' removed but downstream may still require it"
+   - If downstream contract also changed to not need it → No issue
+
+2. **Interface field removed but implementations may still use it**:
+   - OLD: \`interface VerifyParams { email: string; token: string; }\` → NEW: \`interface VerifyParams { token: string; }\`
+   - Check: Are there callers still passing \`email\`? Are there implementations still expecting \`email\`?
+   - If yes → Flag as CRITICAL: "Interface field 'email' removed but still referenced elsewhere"
+
+3. **API request payload field removed**:
+   - OLD: \`$http.post(url, { token, captcha })\` → NEW: \`$http.post(url, {})\`
+   - Check: Does the API endpoint still require these fields?
+   - If API contract is unknown → Flag as SUGGESTION: "Verify API endpoint no longer requires 'token' and 'captcha' fields"
+   - If API clearly doesn't need them (e.g., migration docs) → No issue
+
+4. **Header/Auth token removed from API call**:
+   - OLD: \`headers: { 'x-captcha-token': captchaToken }\` → NEW: \`headers: {}\`
+   - Flag as CRITICAL unless migration explicitly documents the header is no longer needed
+
+5. **Parameter accepted but not forwarded (silently dropped)**:
+   - Pattern: Function accepts a parameter but doesn't use it or pass it to the downstream call
+   - Example:
+     \`\`\`
+     // Store accepts captchaToken but doesn't pass it to client
+     store.fetch({ phone, captchaToken }) {
+       return client.reSendVerifyPhone(); // captchaToken dropped here!
+     }
+
+     // Client sends empty request
+     reSendVerifyPhone() {
+       return $http.post(url, {}); // No headers, no body
+     }
+     \`\`\`
+   - Check: If a function parameter is not used in the function body AND not passed to downstream calls → Flag as CRITICAL
+   - Message: "Parameter 'captchaToken' is accepted but not forwarded to downstream API - verify if API requires it"
+
+6. **API request missing required headers after refactor**:
+   - OLD: \`$http.post(url, {}, { headers: { 'x-captcha-token': token } })\`
+   - NEW: \`$http.post(url, {})\` or \`$http.post(url)\`
+   - If the API endpoint historically required a header → Flag as CRITICAL: "Header 'x-captcha-token' removed from API call - verify endpoint no longer requires it"
+
 `;
 
 /**
@@ -188,6 +235,30 @@ const LANGUAGE_SPECIFIC_CHECKS = {
   js: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`router.query\` / \`useRouter().query\` → \`string | string[] | undefined\` (NEVER just \`string\`)
+   - \`context.query\` in getServerSideProps/getStaticProps → same type
+   - API responses → check response type, may be \`null\` or have optional fields
+   - User input (forms, URL params) → always \`string\`, may be \`undefined\`
+   - Environment variables → \`string | undefined\`
+
+2. **Trace where data flows**:
+   - From source (router.query, API response, user input)
+   - Through intermediate functions (stores, services, utils)
+   - To destination (API calls, state updates, rendering)
+
+3. **At each boundary, verify type compatibility**:
+   - If source type is \`string | string[] | undefined\` but destination expects \`string\` → CRITICAL type mismatch
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If API expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Don't assume type assertions (\`as string\`) are safe without validation
+   - Don't assume optional chaining handles arrays (\`value?.length\` doesn't normalize arrays)
+
 JavaScript/TypeScript-Specific Validation Rules:
 - **Unused React Props**: If imported component definition shows prop NOT in destructuring pattern or PropTypes → Mark as SUGGESTION (not CRITICAL). React ignores extra props silently - this is NOT a runtime error.
 - **Missing PropTypes/Types**: If imported context shows TypeScript interface or JSDoc types → Not an issue.
@@ -209,6 +280,27 @@ TypeScript:
 - any/unknown leakage across module boundaries (exports). Anchor export signature. Default: 3, 0.7.
 - Unsafe narrowing/non-null (!) where undefined is possible. Default: 3, 0.7.
 - Ambient/global type mutations widening types. Default: 3, 0.6.
+
+Package.json / Dependencies:
+- **Canary/pre-release versions before merge**: Versions containing \`-canary\`, \`-alpha\`, \`-beta\`, \`-rc\`, \`-next\`, \`-dev\`, \`-snapshot\`, or \`-experimental\` in package.json (either in "version" field or dependencies). Anchor: version string with pre-release tag. Default: 4, 0.9 → CRITICAL. Fix: Set proper release version (e.g., \`0.0.198\` instead of \`0.0.197-canary-migrate-v4\`) before merging to main/develop.
+- **Mismatched dependency versions across workspaces**: In monorepos, different packages depending on different versions of the same internal package. Anchor: version mismatch in multiple package.json files. Default: 3, 0.7.
+- **Git/file/link dependencies in production**: Dependencies like \`"package": "git+https://..."\` or \`"file:../local"\` that won't resolve in production. Anchor: non-registry dependency. Default: 4, 0.8 → CRITICAL.
+- **Missing peer dependencies**: Package requires peer deps that aren't installed. Default: 2, 0.6 (suggestion).
+- **Wildcard versions (\`*\` or \`latest\`)**: Non-deterministic builds. Anchor: \`"*"\` or \`"latest"\` in dependencies. Default: 3, 0.7.
+
+Next.js Type Awareness (CRITICAL - apply to all Next.js code):
+Next.js has specific type contracts that differ from plain React. When reviewing Next.js code, apply these type rules:
+
+- **router.query / context.query type**: ALL query values from \`useRouter().query\`, \`router.query\`, or \`context.query\` (in getServerSideProps/getStaticProps) are typed as \`string | string[] | undefined\` - NEVER just \`string\`. When these values are passed to functions/APIs expecting \`string\`, flag as CRITICAL type mismatch. The code must normalize with \`Array.isArray()\` check or type guard before use. Default: 4, 0.8.
+
+- **Dynamic route params hydration**: \`router.query\` params are \`undefined\` on first render before hydration completes. Code must check \`router.isReady\` or handle \`undefined\`. Default: 3, 0.7.
+
+- **getStaticProps serialization**: All data returned is serialized to JSON and exposed to clients. Flag if sensitive data (API keys, internal IDs, secrets) is returned. Default: 4, 0.8.
+- **Missing error handling in getServerSideProps/getStaticProps**: Unhandled errors cause 500 pages. Anchor: async data fetching without try-catch. Default: 3, 0.7.
+- **Exposing sensitive data in getStaticProps**: Data returned is serialized to HTML/JSON and visible to clients. Anchor: returning API keys, internal IDs, or sensitive fields. Default: 4, 0.8 → CRITICAL if sensitive.
+- **Missing revalidate in getStaticProps for dynamic data**: Stale data served indefinitely. Anchor: fetching dynamic data without ISR. Default: 2, 0.6 (suggestion).
+- **Client-side data fetching without SWR/React Query in components**: Missing loading/error states, no caching. Anchor: raw fetch/axios in useEffect. Default: 2, 0.5 (suggestion).
+- **Using next/link without prefetch={false} for rarely visited pages**: Unnecessary prefetching wastes bandwidth. Default: 2, 0.5 (suggestion only).
 
 Fetch/IO:
 - Missing AbortController/timeout on fetch/axios; no cancellation for long-lived calls. Default: 3, 0.7.
@@ -246,6 +338,31 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
 
   python: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
+
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`request.args.get()\` / \`request.form.get()\` (Flask) → \`str | None\`
+   - \`request.GET.get()\` / \`request.POST.get()\` (Django) → \`str | None\`
+   - \`request.query_params\` (FastAPI) → depends on type hints, may be \`None\`
+   - API responses → check response type, may be \`None\` or have optional fields
+   - Environment variables \`os.environ.get()\` → \`str | None\`
+   - Database query results → may return \`None\` or empty list
+
+2. **Trace where data flows**:
+   - From source (request params, API response, env vars, DB)
+   - Through intermediate functions (services, utils, validators)
+   - To destination (database queries, API calls, templates)
+
+3. **At each boundary, verify type compatibility**:
+   - If source may be \`None\` but destination expects \`str\` → CRITICAL type mismatch
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If SQL/API expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Don't assume \`or ""\` default handles all cases
+   - Watch for \`Optional[T]\` passed to functions expecting \`T\`
 
 Python-Specific Validation Rules:
 - **Missing try-except**: Check imported function for @safe decorator, internal error handling, documented exceptions, or context managers → Don't flag as CRITICAL if handled internally.
@@ -291,6 +408,31 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   java: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`@RequestParam\` → \`String\`, may be \`null\` unless \`required=true\`
+   - \`@PathVariable\` → \`String\`, typically non-null but verify
+   - \`HttpServletRequest.getParameter()\` → \`String | null\`
+   - \`@RequestBody\` → deserialized object, fields may be \`null\`
+   - Environment variables \`System.getenv()\` → \`String | null\`
+   - Database query results → may return \`null\` or \`Optional.empty()\`
+
+2. **Trace where data flows**:
+   - From source (controller params, request body, env vars, DB)
+   - Through intermediate layers (services, repositories, mappers)
+   - To destination (database queries, external APIs, responses)
+
+3. **At each boundary, verify type compatibility**:
+   - If source may be \`null\` but destination expects non-null → CRITICAL (NPE risk)
+   - If data flows through a method that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If JPA entity field removed but still referenced → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Watch for \`Optional.get()\` without \`isPresent()\` check
+   - Watch for missing \`@NotNull\` validation on nullable inputs
+
 Java-Specific Validation Rules:
 - **Null Safety**: Check imported method signature for @Nullable/@NonNull/@NotNull annotations → Only flag if annotation confirms nullable.
 - **Exception Handling**: If imported method signature declares checked exceptions (throws) → Verify handling; if NOT declared → Don't require try-catch.
@@ -335,6 +477,30 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
 
   php: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
+
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`$_GET\`, \`$_POST\`, \`$_REQUEST\` → \`string | array | null\`
+   - \`$request->input()\` / \`$request->get()\` (Laravel) → \`mixed\`, may be \`null\`
+   - \`$request->query->get()\` (Symfony) → \`string | null\`
+   - Environment variables \`getenv()\` / \`$_ENV\` → \`string | false\`
+   - Database query results → may return \`null\` or empty array
+
+2. **Trace where data flows**:
+   - From source (request params, env vars, DB)
+   - Through intermediate functions (services, repositories, validators)
+   - To destination (database queries, API calls, templates)
+
+3. **At each boundary, verify type compatibility**:
+   - If source may be \`null\` but destination expects \`string\` → CRITICAL type mismatch
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If SQL expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Watch for missing null coalescing (\`??\`) on nullable inputs
+   - Watch for \`mixed\` type passed to functions expecting specific types
 
 PHP-Specific Validation Rules:
 - **SQL Injection**: If imported ORM/query builder method uses prepared statements or parameter binding → Don't flag as CRITICAL.
@@ -382,6 +548,30 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
 
   swift: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
+
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - URL query parameters → \`String?\`
+   - \`URLComponents.queryItems\` → \`[URLQueryItem]?\`, values are \`String?\`
+   - API responses (Codable) → fields may be \`Optional\` or have default values
+   - \`UserDefaults\` → \`Any?\`, requires casting
+   - \`ProcessInfo.processInfo.environment\` → \`[String: String]\`, key may not exist
+
+2. **Trace where data flows**:
+   - From source (URL params, API response, UserDefaults, env)
+   - Through intermediate layers (ViewModels, Services, Managers)
+   - To destination (API calls, CoreData, UI updates)
+
+3. **At each boundary, verify type compatibility**:
+   - If source is \`Optional\` but destination expects non-optional → CRITICAL (force unwrap risk)
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If API expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Watch for force unwrap (\`!\`) on data from external sources
+   - Watch for \`as!\` casting without validation
 
 Swift-Specific Validation Rules:
 - **Force Unwraps**: If imported property/method signature shows non-optional type (no ?) → Force unwrap may be safe; if shows optional (?) → Flag force unwrap as risky.

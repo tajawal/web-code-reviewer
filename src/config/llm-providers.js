@@ -29,21 +29,46 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
    - "final_recommendation": "do_not_merge" or "safe_to_merge"
 
 4. For each issue, provide ALL required fields:
+   - data_flow_trace (REQUIRED FIRST - array, see rule 5)
    - id, category, severity_proposed, severity_score
    - risk_factors (object with impact, exploitability, likelihood, blast_radius, evidence_strength)
    - confidence, file, lines, snippet
    - why_it_matters, fix_summary, fix_code_patch, tests, occurrences
 
-5. SEVERITY RULES (deterministic):
+5. DATA FLOW TRACE - MANDATORY FIRST FIELD FOR EVERY ISSUE:
+   BEFORE writing any issue, you MUST FIRST create the "data_flow_trace" array:
+
+   "data_flow_trace": [
+     "SOURCE: <where data originates> → <type>",
+     "INTERMEDIATE: <what happens at each step>",
+     "DESTINATION: <where data ends up> → <expected type>",
+     "MISMATCH: <type mismatch or dropped parameter, if any>"
+   ]
+
+   Example:
+   "data_flow_trace": [
+     "SOURCE: router.query.phone → string | string[] | undefined",
+     "INTERMEDIATE: passed to store.fetch({ phone })",
+     "INTERMEDIATE: store calls client.verify() but drops phone",
+     "DESTINATION: client.verify() sends {} to API",
+     "MISMATCH: phone parameter dropped, API may require it"
+   ]
+
+   If no data flow: ["N/A - static code issue"]
+
+   WARNING: Issues WITHOUT data_flow_trace will be REJECTED.
+
+6. SEVERITY RULES (deterministic):
    - CRITICAL only if: severity_score >= 3.60 AND evidence_strength >= 4 AND confidence >= 0.7
+   - If data_flow_trace shows type mismatch or dropped parameter: evidence_strength = 5, severity_score >= 3.80
    - If evidence_strength <= 2 OR confidence <= 0.5: ALWAYS suggestion
    - Otherwise: suggestion
 
-6. SORT issues by severity_score (highest first)
+7. SORT issues by severity_score (highest first)
    - Ties: by category (security > performance > maintainability > best_practices)
    - Then by id, file, lines[0]
 
-7. Temperature is 0: Be deterministic and consistent`;
+8. Temperature is 0: Be deterministic and consistent`;
 
 const LLM_PROVIDERS = {
   openai: {
@@ -72,16 +97,17 @@ const LLM_PROVIDERS = {
   },
   claude: {
     url: 'https://api.anthropic.com/v1/messages',
-    model: 'claude-sonnet-4-5-20250929',
+    model: 'claude-sonnet-4-6',
     headers: apiKey => ({
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01'
     }),
     body: (prompt, diff) => ({
-      model: 'claude-sonnet-4-5-20250929',
+      model: 'claude-sonnet-4-6',
       max_tokens: CORE_CONFIG.MAX_TOKENS,
       temperature: CORE_CONFIG.TEMPERATURE,
+      top_k: 1, // Force deterministic: always pick highest probability token
       messages: [
         {
           role: 'user',

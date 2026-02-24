@@ -6,10 +6,16 @@
 const CONTEXT_CONFIG = {
   // FIXED context size for determinism (not dynamic)
   // Using fixed size ensures every review gets consistent context
-  FIXED_CONTEXT_SIZE: 100 * 1024, // 100KB fixed context - provides good balance
+  // Increased for Sonnet 4.6's 1M token context window
+  FIXED_CONTEXT_SIZE: 200 * 1024, // 200KB fixed context - leverages larger context window
 
   // Legacy dynamic sizing (kept for backward compatibility, but not used)
-  MAX_CONTEXT_SIZE: 120 * 1024, // 120KB max context size (fallback) - increased for better context
+  MAX_CONTEXT_SIZE: 250 * 1024, // 250KB max context size (fallback) - increased for Sonnet 4.6
+
+  // Full content for direct imports (hybrid approach)
+  FULL_CONTENT_FOR_DIRECT_IMPORTS: true, // Include full file content for first-level imports
+  MAX_DIRECT_IMPORT_LINES: 2000, // Max lines per imported file
+  MAX_DIRECT_IMPORTS: 5, // Max number of direct imports to include full content
   MAX_PROJECT_FILES: 30, // Max files to include in project structure
   MAX_COMMIT_HISTORY: 5, // Reduced from 15 for more focused context
   MAX_IMPORT_LINES: 10, // Reduced from 15 for more focused context
