@@ -89954,6 +89954,30 @@ const LANGUAGE_SPECIFIC_CHECKS = {
   js: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`router.query\` / \`useRouter().query\` → \`string | string[] | undefined\` (NEVER just \`string\`)
+   - \`context.query\` in getServerSideProps/getStaticProps → same type
+   - API responses → check response type, may be \`null\` or have optional fields
+   - User input (forms, URL params) → always \`string\`, may be \`undefined\`
+   - Environment variables → \`string | undefined\`
+
+2. **Trace where data flows**:
+   - From source (router.query, API response, user input)
+   - Through intermediate functions (stores, services, utils)
+   - To destination (API calls, state updates, rendering)
+
+3. **At each boundary, verify type compatibility**:
+   - If source type is \`string | string[] | undefined\` but destination expects \`string\` → CRITICAL type mismatch
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If API expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Don't assume type assertions (\`as string\`) are safe without validation
+   - Don't assume optional chaining handles arrays (\`value?.length\` doesn't normalize arrays)
+
 JavaScript/TypeScript-Specific Validation Rules:
 - **Unused React Props**: If imported component definition shows prop NOT in destructuring pattern or PropTypes → Mark as SUGGESTION (not CRITICAL). React ignores extra props silently - this is NOT a runtime error.
 - **Missing PropTypes/Types**: If imported context shows TypeScript interface or JSDoc types → Not an issue.
@@ -89983,10 +90007,14 @@ Package.json / Dependencies:
 - **Missing peer dependencies**: Package requires peer deps that aren't installed. Default: 2, 0.6 (suggestion).
 - **Wildcard versions (\`*\` or \`latest\`)**: Non-deterministic builds. Anchor: \`"*"\` or \`"latest"\` in dependencies. Default: 3, 0.7.
 
-Next.js Specific:
-- **router.query values are string | string[] | undefined**: When using \`router.query.param\` or \`useRouter().query.param\`, the value can be an array if URL has repeated params (e.g., \`?id=a&id=b\`). Anchor: direct usage of query params without array handling. Default: 4, 0.8. Fix: Normalize with \`Array.isArray(param) ? param[0] : param\` or use \`router.query.param as string\` only after validation.
-- **getServerSideProps/getStaticProps params.query types**: Same issue - \`context.query\` values are \`string | string[] | undefined\`. Anchor: direct usage without type narrowing. Default: 4, 0.8.
-- **Dynamic route params ([id].tsx)**: \`router.query.id\` is undefined on first render (before hydration). Anchor: using query params without undefined check. Default: 3, 0.7. Fix: Guard with \`if (!router.isReady) return null\` or check for undefined.
+Next.js Type Awareness (CRITICAL - apply to all Next.js code):
+Next.js has specific type contracts that differ from plain React. When reviewing Next.js code, apply these type rules:
+
+- **router.query / context.query type**: ALL query values from \`useRouter().query\`, \`router.query\`, or \`context.query\` (in getServerSideProps/getStaticProps) are typed as \`string | string[] | undefined\` - NEVER just \`string\`. When these values are passed to functions/APIs expecting \`string\`, flag as CRITICAL type mismatch. The code must normalize with \`Array.isArray()\` check or type guard before use. Default: 4, 0.8.
+
+- **Dynamic route params hydration**: \`router.query\` params are \`undefined\` on first render before hydration completes. Code must check \`router.isReady\` or handle \`undefined\`. Default: 3, 0.7.
+
+- **getStaticProps serialization**: All data returned is serialized to JSON and exposed to clients. Flag if sensitive data (API keys, internal IDs, secrets) is returned. Default: 4, 0.8.
 - **Missing error handling in getServerSideProps/getStaticProps**: Unhandled errors cause 500 pages. Anchor: async data fetching without try-catch. Default: 3, 0.7.
 - **Exposing sensitive data in getStaticProps**: Data returned is serialized to HTML/JSON and visible to clients. Anchor: returning API keys, internal IDs, or sensitive fields. Default: 4, 0.8 → CRITICAL if sensitive.
 - **Missing revalidate in getStaticProps for dynamic data**: Stale data served indefinitely. Anchor: fetching dynamic data without ISR. Default: 2, 0.6 (suggestion).
