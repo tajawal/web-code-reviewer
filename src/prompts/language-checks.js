@@ -235,6 +235,30 @@ const LANGUAGE_SPECIFIC_CHECKS = {
   js: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
+**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
+When reviewing code, you MUST trace data flow and verify type compatibility:
+
+1. **Identify data sources and their types**:
+   - \`router.query\` / \`useRouter().query\` → \`string | string[] | undefined\` (NEVER just \`string\`)
+   - \`context.query\` in getServerSideProps/getStaticProps → same type
+   - API responses → check response type, may be \`null\` or have optional fields
+   - User input (forms, URL params) → always \`string\`, may be \`undefined\`
+   - Environment variables → \`string | undefined\`
+
+2. **Trace where data flows**:
+   - From source (router.query, API response, user input)
+   - Through intermediate functions (stores, services, utils)
+   - To destination (API calls, state updates, rendering)
+
+3. **At each boundary, verify type compatibility**:
+   - If source type is \`string | string[] | undefined\` but destination expects \`string\` → CRITICAL type mismatch
+   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
+   - If API expects a field but caller doesn't send it → CRITICAL
+
+4. **Flag mismatches immediately**:
+   - Don't assume type assertions (\`as string\`) are safe without validation
+   - Don't assume optional chaining handles arrays (\`value?.length\` doesn't normalize arrays)
+
 JavaScript/TypeScript-Specific Validation Rules:
 - **Unused React Props**: If imported component definition shows prop NOT in destructuring pattern or PropTypes → Mark as SUGGESTION (not CRITICAL). React ignores extra props silently - this is NOT a runtime error.
 - **Missing PropTypes/Types**: If imported context shows TypeScript interface or JSDoc types → Not an issue.
