@@ -58,17 +58,45 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
 
    WARNING: Issues WITHOUT data_flow_trace will be REJECTED.
 
-6. SEVERITY RULES (deterministic):
-   - CRITICAL only if: severity_score >= 3.60 AND evidence_strength >= 4 AND confidence >= 0.7
-   - If data_flow_trace shows type mismatch or dropped parameter: evidence_strength = 5, severity_score >= 3.80
-   - If evidence_strength <= 2 OR confidence <= 0.5: ALWAYS suggestion
-   - Otherwise: suggestion
+6. SEVERITY PRINCIPLES (apply in order):
 
-7. SORT issues by severity_score (highest first)
+   A. EVIDENCE FIRST: What does data_flow_trace prove?
+      - Shows concrete mismatch/dropped params → high evidence
+      - Shows speculation ("may", "might") → low evidence
+      - No trace or "N/A" → must justify with other proof
+
+   B. HARM TEST: "What breaks if this ships?"
+      - Can you describe specific failure? → may be critical
+      - Only theoretical/hypothetical harm? → suggestion
+      - Harm depends on assumptions? → suggestion
+
+   C. BLAST RADIUS: Who is affected?
+      - Single user/request → lower severity
+      - All users of feature → higher severity
+      - Downstream consumers (shared libs) → highest severity
+
+   D. TRUST CONTEXT (security issues only):
+      - Data from own system (DB, env, internal API) → low exploitability
+      - Data from external/user input → high exploitability
+
+7. SEVERITY THRESHOLDS:
+   CRITICAL requires ALL of:
+   - evidence_strength >= 4 (proven, not speculative)
+   - confidence >= 0.7
+   - Specific harm articulated (not "may cause issues")
+   - severity_score >= 3.60
+
+   SUGGESTION if ANY of:
+   - evidence_strength <= 2
+   - confidence <= 0.5
+   - Harm is hypothetical or requires assumptions
+   - Issue is style/preference, not correctness
+
+8. SORT issues by severity_score (highest first)
    - Ties: by category (security > performance > maintainability > best_practices)
    - Then by id, file, lines[0]
 
-8. Temperature is 0: Be deterministic and consistent`;
+9. Temperature is 0: Be deterministic and consistent`;
 
 const LLM_PROVIDERS = {
   openai: {
