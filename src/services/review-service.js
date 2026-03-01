@@ -293,7 +293,7 @@ class ReviewService {
             issue.data_flow_trace &&
             Array.isArray(issue.data_flow_trace) &&
             issue.data_flow_trace.length > 0 &&
-            issue.data_flow_trace[0] !== 'N/A - static code issue'
+            !issue.data_flow_trace[0].startsWith('N/A')
           ) {
             issueDetails += `- **Data Flow**:\n`;
             issue.data_flow_trace.forEach(step => {
@@ -332,7 +332,7 @@ class ReviewService {
             issue.data_flow_trace &&
             Array.isArray(issue.data_flow_trace) &&
             issue.data_flow_trace.length > 0 &&
-            issue.data_flow_trace[0] !== 'N/A - static code issue'
+            !issue.data_flow_trace[0].startsWith('N/A')
           ) {
             issueDetails += `- **Data Flow**:\n`;
             issue.data_flow_trace.forEach(step => {

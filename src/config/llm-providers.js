@@ -36,27 +36,23 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
    - why_it_matters, fix_summary, fix_code_patch, tests, occurrences
 
 5. DATA FLOW TRACE - MANDATORY FIRST FIELD FOR EVERY ISSUE:
-   BEFORE writing any issue, you MUST FIRST create the "data_flow_trace" array:
+   BEFORE writing any issue, you MUST FIRST create the "data_flow_trace" array.
 
+   Ask: "Does data move from point A to point B in this issue?"
+   - YES (variable → function, query → API, prop → component, external var → closure)
+     → Trace it: SOURCE → INTERMEDIATE → DESTINATION → MISMATCH
+   - NO (code style, naming, comments, static config)
+     → Use: ["N/A - <reason>"]
+
+   Format:
    "data_flow_trace": [
      "SOURCE: <where data originates> → <type>",
      "INTERMEDIATE: <what happens at each step>",
      "DESTINATION: <where data ends up> → <expected type>",
-     "MISMATCH: <type mismatch or dropped parameter, if any>"
+     "MISMATCH: <what goes wrong - type error, stale value, dropped param>"
    ]
 
-   Example:
-   "data_flow_trace": [
-     "SOURCE: router.query.phone → string | string[] | undefined",
-     "INTERMEDIATE: passed to store.fetch({ phone })",
-     "INTERMEDIATE: store calls client.verify() but drops phone",
-     "DESTINATION: client.verify() sends {} to API",
-     "MISMATCH: phone parameter dropped, API may require it"
-   ]
-
-   If no data flow: ["N/A - static code issue"]
-
-   WARNING: Issues WITHOUT data_flow_trace will be REJECTED.
+   NEVER omit data_flow_trace. EVERY issue MUST have this field.
 
 6. SEVERITY PRINCIPLES (apply in order):
 
