@@ -35,24 +35,23 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
    - confidence, file, lines, snippet
    - why_it_matters, fix_summary, fix_code_patch, tests, occurrences
 
-5. DATA FLOW TRACE - MANDATORY FIRST FIELD FOR EVERY ISSUE:
-   BEFORE writing any issue, you MUST FIRST create the "data_flow_trace" array.
+5. DATA FLOW TRACE - Include for every issue:
+   For each issue, add "data_flow_trace" array showing how data moves:
 
-   Ask: "Does data move from point A to point B in this issue?"
-   - YES (variable → function, query → API, prop → component, external var → closure)
-     → Trace it: SOURCE → INTERMEDIATE → DESTINATION → MISMATCH
-   - NO (code style, naming, comments, static config)
-     → Use: ["N/A - <reason>"]
-
-   Format:
    "data_flow_trace": [
-     "SOURCE: <where data originates> → <type>",
-     "INTERMEDIATE: <what happens at each step>",
-     "DESTINATION: <where data ends up> → <expected type>",
-     "MISMATCH: <what goes wrong - type error, stale value, dropped param>"
+     "SOURCE: <where data originates>",
+     "DESTINATION: <where data ends up>",
+     "MISMATCH: <what goes wrong, if any>"
    ]
 
-   NEVER omit data_flow_trace. EVERY issue MUST have this field.
+   Examples of data flow to trace:
+   - Query params → API call (may be undefined/stale)
+   - Props → child component (type mismatch)
+   - External vars → closure (stale values)
+   - User input → database (missing validation)
+
+   For style issues (console.log, naming): ["N/A - code style"]
+   For config issues (version strings): ["N/A - static config"]
 
 6. SEVERITY PRINCIPLES (apply in order):
 
@@ -92,9 +91,7 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
    - Ties: by category (security > performance > maintainability > best_practices)
    - Then by id, file, lines[0]
 
-9. Temperature is 0: Be deterministic and consistent
-
-FINAL CHECK: Every issue in the "issues" array MUST have a "data_flow_trace" array as its FIRST field. No exceptions.`;
+9. Temperature is 0: Be deterministic and consistent`;
 
 const LLM_PROVIDERS = {
   openai: {
