@@ -96,7 +96,9 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
    - Ties: by category (security > performance > maintainability > best_practices)
    - Then by id, file, lines[0]
 
-9. Temperature is 0: Be deterministic and consistent`;
+9. Temperature is 0: Be deterministic and consistent
+
+FINAL CHECK: Every issue in the "issues" array MUST have a "data_flow_trace" array as its FIRST field. No exceptions.`;
 
 const LLM_PROVIDERS = {
   openai: {

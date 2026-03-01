@@ -235,8 +235,8 @@ const LANGUAGE_SPECIFIC_CHECKS = {
   js: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
-**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
-When reviewing code, you MUST trace data flow and verify type compatibility:
+**Data Flow & Type Tracing (CRITICAL - output in data_flow_trace field)**:
+For EVERY issue you report, trace data flow and record it in the "data_flow_trace" array:
 
 1. **Identify data sources and their types**:
    - \`router.query\` / \`useRouter().query\` → \`string | string[] | undefined\` (NEVER just \`string\`)
@@ -339,8 +339,8 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   python: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
-**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
-When reviewing code, you MUST trace data flow and verify type compatibility:
+**Data Flow & Type Tracing (CRITICAL - output in data_flow_trace field)**:
+For EVERY issue you report, trace data flow and record it in the "data_flow_trace" array:
 
 1. **Identify data sources and their types**:
    - \`request.args.get()\` / \`request.form.get()\` (Flask) → \`str | None\`
@@ -408,8 +408,8 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   java: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
-**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
-When reviewing code, you MUST trace data flow and verify type compatibility:
+**Data Flow & Type Tracing (CRITICAL - output in data_flow_trace field)**:
+For EVERY issue you report, trace data flow and record it in the "data_flow_trace" array:
 
 1. **Identify data sources and their types**:
    - \`@RequestParam\` → \`String\`, may be \`null\` unless \`required=true\`
@@ -478,8 +478,8 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   php: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
-**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
-When reviewing code, you MUST trace data flow and verify type compatibility:
+**Data Flow & Type Tracing (CRITICAL - output in data_flow_trace field)**:
+For EVERY issue you report, trace data flow and record it in the "data_flow_trace" array:
 
 1. **Identify data sources and their types**:
    - \`$_GET\`, \`$_POST\`, \`$_REQUEST\` → \`string | array | null\`
@@ -549,8 +549,8 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   swift: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
-**Data Flow & Type Tracing (CRITICAL - apply to ALL code)**:
-When reviewing code, you MUST trace data flow and verify type compatibility:
+**Data Flow & Type Tracing (CRITICAL - output in data_flow_trace field)**:
+For EVERY issue you report, trace data flow and record it in the "data_flow_trace" array:
 
 1. **Identify data sources and their types**:
    - URL query parameters → \`String?\`
