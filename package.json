@@ -1,6 +1,6 @@
 {
   "name": "web-code-reviewer",
-  "version": "1.14.52",
+  "version": "1.14.53",
   "description": "Automated code review using LLM (Claude/OpenAI) for GitHub PRs",
   "main": "dist/index.js",
   "scripts": {
