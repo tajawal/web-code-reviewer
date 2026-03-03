@@ -235,29 +235,24 @@ const LANGUAGE_SPECIFIC_CHECKS = {
   js: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
-**Data Flow & Type Tracing (CRITICAL - output in data_flow_trace field)**:
-For EVERY issue you report, trace data flow and record it in the "data_flow_trace" array:
+**Data Flow Analysis**:
+When analyzing issues, trace how data moves through the code:
 
-1. **Identify data sources and their types**:
-   - \`router.query\` / \`useRouter().query\` → \`string | string[] | undefined\` (NEVER just \`string\`)
-   - \`context.query\` in getServerSideProps/getStaticProps → same type
-   - API responses → check response type, may be \`null\` or have optional fields
-   - User input (forms, URL params) → always \`string\`, may be \`undefined\`
-   - Environment variables → \`string | undefined\`
+1. **External data sources have uncertain types**:
+   - URL/query params → may be null, undefined, array, or wrong type
+   - API responses → may be null, missing fields, or unexpected shape
+   - User input → always validate before use
+   - Environment variables → may be missing
 
-2. **Trace where data flows**:
-   - From source (router.query, API response, user input)
-   - Through intermediate functions (stores, services, utils)
-   - To destination (API calls, state updates, rendering)
+2. **At boundaries, verify types match**:
+   - Source type must be compatible with destination expectations
+   - Parameters must be passed through (not dropped silently)
+   - Required fields must be present in API calls
 
-3. **At each boundary, verify type compatibility**:
-   - If source type is \`string | string[] | undefined\` but destination expects \`string\` → CRITICAL type mismatch
-   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
-   - If API expects a field but caller doesn't send it → CRITICAL
-
-4. **Flag mismatches immediately**:
-   - Don't assume type assertions (\`as string\`) are safe without validation
-   - Don't assume optional chaining handles arrays (\`value?.length\` doesn't normalize arrays)
+3. **Flag when**:
+   - Data reaches destination with wrong type
+   - Parameters are accepted but not forwarded
+   - Required fields are missing from API requests
 
 JavaScript/TypeScript-Specific Validation Rules:
 - **Unused React Props**: If imported component definition shows prop NOT in destructuring pattern or PropTypes → Mark as SUGGESTION (not CRITICAL). React ignores extra props silently - this is NOT a runtime error.
@@ -339,30 +334,25 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   python: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
-**Data Flow & Type Tracing (CRITICAL - output in data_flow_trace field)**:
-For EVERY issue you report, trace data flow and record it in the "data_flow_trace" array:
+**Data Flow Analysis**:
+When analyzing issues, trace how data moves through the code:
 
-1. **Identify data sources and their types**:
-   - \`request.args.get()\` / \`request.form.get()\` (Flask) → \`str | None\`
-   - \`request.GET.get()\` / \`request.POST.get()\` (Django) → \`str | None\`
-   - \`request.query_params\` (FastAPI) → depends on type hints, may be \`None\`
-   - API responses → check response type, may be \`None\` or have optional fields
-   - Environment variables \`os.environ.get()\` → \`str | None\`
-   - Database query results → may return \`None\` or empty list
+1. **External data sources have uncertain types**:
+   - Request params → may be None or wrong type
+   - API responses → may be None, missing fields, or unexpected shape
+   - User input → always validate before use
+   - Environment variables → may be missing
+   - Database results → may be None or empty
 
-2. **Trace where data flows**:
-   - From source (request params, API response, env vars, DB)
-   - Through intermediate functions (services, utils, validators)
-   - To destination (database queries, API calls, templates)
+2. **At boundaries, verify types match**:
+   - Source type must be compatible with destination expectations
+   - Parameters must be passed through (not dropped silently)
+   - Required fields must be present in API/DB calls
 
-3. **At each boundary, verify type compatibility**:
-   - If source may be \`None\` but destination expects \`str\` → CRITICAL type mismatch
-   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
-   - If SQL/API expects a field but caller doesn't send it → CRITICAL
-
-4. **Flag mismatches immediately**:
-   - Don't assume \`or ""\` default handles all cases
-   - Watch for \`Optional[T]\` passed to functions expecting \`T\`
+3. **Flag when**:
+   - Data reaches destination with wrong type
+   - Parameters are accepted but not forwarded
+   - Required fields are missing
 
 Python-Specific Validation Rules:
 - **Missing try-except**: Check imported function for @safe decorator, internal error handling, documented exceptions, or context managers → Don't flag as CRITICAL if handled internally.
@@ -408,30 +398,25 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   java: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
-**Data Flow & Type Tracing (CRITICAL - output in data_flow_trace field)**:
-For EVERY issue you report, trace data flow and record it in the "data_flow_trace" array:
+**Data Flow Analysis**:
+When analyzing issues, trace how data moves through the code:
 
-1. **Identify data sources and their types**:
-   - \`@RequestParam\` → \`String\`, may be \`null\` unless \`required=true\`
-   - \`@PathVariable\` → \`String\`, typically non-null but verify
-   - \`HttpServletRequest.getParameter()\` → \`String | null\`
-   - \`@RequestBody\` → deserialized object, fields may be \`null\`
-   - Environment variables \`System.getenv()\` → \`String | null\`
-   - Database query results → may return \`null\` or \`Optional.empty()\`
+1. **External data sources have uncertain types**:
+   - Request params → may be null
+   - Request body fields → may be null after deserialization
+   - API responses → may be null or missing fields
+   - Environment variables → may be missing
+   - Database results → may be null or Optional.empty()
 
-2. **Trace where data flows**:
-   - From source (controller params, request body, env vars, DB)
-   - Through intermediate layers (services, repositories, mappers)
-   - To destination (database queries, external APIs, responses)
+2. **At boundaries, verify types match**:
+   - Source type must be compatible with destination expectations
+   - Parameters must be passed through (not dropped silently)
+   - Required fields must be present in API/DB calls
 
-3. **At each boundary, verify type compatibility**:
-   - If source may be \`null\` but destination expects non-null → CRITICAL (NPE risk)
-   - If data flows through a method that doesn't pass it downstream → CRITICAL (parameter dropped)
-   - If JPA entity field removed but still referenced → CRITICAL
-
-4. **Flag mismatches immediately**:
-   - Watch for \`Optional.get()\` without \`isPresent()\` check
-   - Watch for missing \`@NotNull\` validation on nullable inputs
+3. **Flag when**:
+   - Null passed where non-null expected (NPE risk)
+   - Parameters are accepted but not forwarded
+   - Required fields are missing
 
 Java-Specific Validation Rules:
 - **Null Safety**: Check imported method signature for @Nullable/@NonNull/@NotNull annotations → Only flag if annotation confirms nullable.
@@ -478,29 +463,25 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   php: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
-**Data Flow & Type Tracing (CRITICAL - output in data_flow_trace field)**:
-For EVERY issue you report, trace data flow and record it in the "data_flow_trace" array:
+**Data Flow Analysis**:
+When analyzing issues, trace how data moves through the code:
 
-1. **Identify data sources and their types**:
-   - \`$_GET\`, \`$_POST\`, \`$_REQUEST\` → \`string | array | null\`
-   - \`$request->input()\` / \`$request->get()\` (Laravel) → \`mixed\`, may be \`null\`
-   - \`$request->query->get()\` (Symfony) → \`string | null\`
-   - Environment variables \`getenv()\` / \`$_ENV\` → \`string | false\`
-   - Database query results → may return \`null\` or empty array
+1. **External data sources have uncertain types**:
+   - Request params → may be null, array, or wrong type
+   - API responses → may be null or missing fields
+   - User input → always validate before use
+   - Environment variables → may be missing or false
+   - Database results → may be null or empty
 
-2. **Trace where data flows**:
-   - From source (request params, env vars, DB)
-   - Through intermediate functions (services, repositories, validators)
-   - To destination (database queries, API calls, templates)
+2. **At boundaries, verify types match**:
+   - Source type must be compatible with destination expectations
+   - Parameters must be passed through (not dropped silently)
+   - Required fields must be present in API/DB calls
 
-3. **At each boundary, verify type compatibility**:
-   - If source may be \`null\` but destination expects \`string\` → CRITICAL type mismatch
-   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
-   - If SQL expects a field but caller doesn't send it → CRITICAL
-
-4. **Flag mismatches immediately**:
-   - Watch for missing null coalescing (\`??\`) on nullable inputs
-   - Watch for \`mixed\` type passed to functions expecting specific types
+3. **Flag when**:
+   - Data reaches destination with wrong type
+   - Parameters are accepted but not forwarded
+   - Required fields are missing
 
 PHP-Specific Validation Rules:
 - **SQL Injection**: If imported ORM/query builder method uses prepared statements or parameter binding → Don't flag as CRITICAL.
@@ -549,29 +530,24 @@ Note: Use post-patch line numbers. If only diff hunk is known or source is uncer
   swift: `
 ${SEVERITY_VALIDATION_FRAMEWORK}
 
-**Data Flow & Type Tracing (CRITICAL - output in data_flow_trace field)**:
-For EVERY issue you report, trace data flow and record it in the "data_flow_trace" array:
+**Data Flow Analysis**:
+When analyzing issues, trace how data moves through the code:
 
-1. **Identify data sources and their types**:
-   - URL query parameters → \`String?\`
-   - \`URLComponents.queryItems\` → \`[URLQueryItem]?\`, values are \`String?\`
-   - API responses (Codable) → fields may be \`Optional\` or have default values
-   - \`UserDefaults\` → \`Any?\`, requires casting
-   - \`ProcessInfo.processInfo.environment\` → \`[String: String]\`, key may not exist
+1. **External data sources have uncertain types**:
+   - URL/query params → may be nil or wrong type
+   - API responses → fields may be Optional or missing
+   - User input → always validate before use
+   - UserDefaults/environment → may be missing
 
-2. **Trace where data flows**:
-   - From source (URL params, API response, UserDefaults, env)
-   - Through intermediate layers (ViewModels, Services, Managers)
-   - To destination (API calls, CoreData, UI updates)
+2. **At boundaries, verify types match**:
+   - Source type must be compatible with destination expectations
+   - Parameters must be passed through (not dropped silently)
+   - Required fields must be present in API calls
 
-3. **At each boundary, verify type compatibility**:
-   - If source is \`Optional\` but destination expects non-optional → CRITICAL (force unwrap risk)
-   - If data flows through a function that doesn't pass it downstream → CRITICAL (parameter dropped)
-   - If API expects a field but caller doesn't send it → CRITICAL
-
-4. **Flag mismatches immediately**:
-   - Watch for force unwrap (\`!\`) on data from external sources
-   - Watch for \`as!\` casting without validation
+3. **Flag when**:
+   - Optional passed where non-optional expected (force unwrap risk)
+   - Parameters are accepted but not forwarded
+   - Required fields are missing
 
 Swift-Specific Validation Rules:
 - **Force Unwraps**: If imported property/method signature shows non-optional type (no ?) → Force unwrap may be safe; if shows optional (?) → Flag force unwrap as risky.

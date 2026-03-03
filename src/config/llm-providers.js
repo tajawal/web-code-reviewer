@@ -28,9 +28,8 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
    - "metrics": {critical_count, suggestion_count, by_category}
    - "final_recommendation": "do_not_merge" or "safe_to_merge"
 
-4. Each issue MUST follow this exact JSON structure:
+4. Each issue MUST follow this JSON structure:
    {
-     "data_flow_trace": ["SOURCE: ...", "DESTINATION: ...", "MISMATCH: ..."],
      "id": "SEC-01",
      "category": "security",
      "severity_proposed": "critical",
@@ -40,23 +39,18 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
      "file": "path/to/file.ts",
      "lines": [10, 15],
      "snippet": "code here",
-     "why_it_matters": "impact description",
+     "why_it_matters": "impact description with data flow analysis",
      "fix_summary": "how to fix",
      "fix_code_patch": "- old\\n+ new",
      "tests": "test assertion"
    }
 
-5. DATA FLOW TRACE values:
-   - For data issues: ["SOURCE: router.query", "DESTINATION: API call", "MISMATCH: may be undefined"]
-   - For style issues: ["N/A - code style"]
-   - For config issues: ["N/A - static config"]
+5. SEVERITY PRINCIPLES (apply in order):
 
-6. SEVERITY PRINCIPLES (apply in order):
-
-   A. EVIDENCE FIRST: What does data_flow_trace prove?
+   A. EVIDENCE FIRST: What does the code prove?
       - Shows concrete mismatch/dropped params → high evidence
       - Shows speculation ("may", "might") → low evidence
-      - No trace or "N/A" → must justify with other proof
+      - Can't trace data flow → lower confidence
 
    B. HARM TEST: "What breaks if this ships?"
       - Can you describe specific failure? → may be critical
@@ -72,7 +66,7 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
       - Data from own system (DB, env, internal API) → low exploitability
       - Data from external/user input → high exploitability
 
-7. SEVERITY THRESHOLDS:
+6. SEVERITY THRESHOLDS:
    CRITICAL requires ALL of:
    - evidence_strength >= 4 (proven, not speculative)
    - confidence >= 0.7
@@ -85,11 +79,11 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
    - Harm is hypothetical or requires assumptions
    - Issue is style/preference, not correctness
 
-8. SORT issues by severity_score (highest first)
+7. SORT issues by severity_score (highest first)
    - Ties: by category (security > performance > maintainability > best_practices)
    - Then by id, file, lines[0]
 
-9. Temperature is 0: Be deterministic and consistent`;
+8. Temperature is 0: Be deterministic and consistent`;
 
 const LLM_PROVIDERS = {
   openai: {
