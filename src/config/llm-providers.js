@@ -28,30 +28,28 @@ CRITICAL INSTRUCTIONS FOR OUTPUT:
    - "metrics": {critical_count, suggestion_count, by_category}
    - "final_recommendation": "do_not_merge" or "safe_to_merge"
 
-4. For each issue, provide ALL required fields:
-   - data_flow_trace (REQUIRED FIRST - array, see rule 5)
-   - id, category, severity_proposed, severity_score
-   - risk_factors (object with impact, exploitability, likelihood, blast_radius, evidence_strength)
-   - confidence, file, lines, snippet
-   - why_it_matters, fix_summary, fix_code_patch, tests, occurrences
+4. Each issue MUST follow this exact JSON structure:
+   {
+     "data_flow_trace": ["SOURCE: ...", "DESTINATION: ...", "MISMATCH: ..."],
+     "id": "SEC-01",
+     "category": "security",
+     "severity_proposed": "critical",
+     "severity_score": 3.8,
+     "risk_factors": {"impact": 4, "exploitability": 3, "likelihood": 4, "blast_radius": 3, "evidence_strength": 4},
+     "confidence": 0.85,
+     "file": "path/to/file.ts",
+     "lines": [10, 15],
+     "snippet": "code here",
+     "why_it_matters": "impact description",
+     "fix_summary": "how to fix",
+     "fix_code_patch": "- old\\n+ new",
+     "tests": "test assertion"
+   }
 
-5. DATA FLOW TRACE - Include for every issue:
-   For each issue, add "data_flow_trace" array showing how data moves:
-
-   "data_flow_trace": [
-     "SOURCE: <where data originates>",
-     "DESTINATION: <where data ends up>",
-     "MISMATCH: <what goes wrong, if any>"
-   ]
-
-   Examples of data flow to trace:
-   - Query params → API call (may be undefined/stale)
-   - Props → child component (type mismatch)
-   - External vars → closure (stale values)
-   - User input → database (missing validation)
-
-   For style issues (console.log, naming): ["N/A - code style"]
-   For config issues (version strings): ["N/A - static config"]
+5. DATA FLOW TRACE values:
+   - For data issues: ["SOURCE: router.query", "DESTINATION: API call", "MISMATCH: may be undefined"]
+   - For style issues: ["N/A - code style"]
+   - For config issues: ["N/A - static config"]
 
 6. SEVERITY PRINCIPLES (apply in order):
 
