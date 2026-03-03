@@ -54,6 +54,10 @@ class ReviewService {
             // Collect issues
             if (reviewData.issues && Array.isArray(reviewData.issues)) {
               reviewData.issues.forEach(issue => {
+                // Log if data_flow_trace is missing
+                if (!issue.data_flow_trace || !Array.isArray(issue.data_flow_trace)) {
+                  core.warning(`⚠️ Issue ${issue.id} missing data_flow_trace`);
+                }
                 // Add chunk context to issue
                 const issueWithContext = {
                   ...issue,
